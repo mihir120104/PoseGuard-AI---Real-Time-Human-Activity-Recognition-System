@@ -1,0 +1,7 @@
+Accuracy:0.9961089494163424
+F1:0.9961083413446776
+F1_macro:0.9964280133056505
+Top2_accuracy:1.0
+Avg_confidence:0.9436266422271729
+Correct_samples:512
+Wrong_samples:2

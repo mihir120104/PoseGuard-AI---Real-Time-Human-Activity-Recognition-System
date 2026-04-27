@@ -1,0 +1,31 @@
+HAR MODEL — DETAILED METRICS
+=======================================================
+
+Accuracy    : 99.61%
+Weighted F1 : 99.61%
+Macro F1    : 99.64%
+Top-2 Acc   : 100.00%
+
+Per-Class:
+  Drinking               F1=0.988  Prec=0.976  Rec=1.000  Support=80
+  Typing                 F1=1.000  Prec=1.000  Rec=1.000  Support=47
+  WritingOnBoard         F1=1.000  Prec=1.000  Rec=1.000  Support=80
+  eating                 F1=0.987  Prec=1.000  Rec=0.975  Support=80
+  exercise               F1=1.000  Prec=1.000  Rec=1.000  Support=79
+  fighting               F1=1.000  Prec=1.000  Rec=1.000  Support=69
+  No Activity            F1=1.000  Prec=1.000  Rec=1.000  Support=79
+
+Classification Report:
+                precision    recall  f1-score   support
+
+      Drinking     0.9756    1.0000    0.9877        80
+        Typing     1.0000    1.0000    1.0000        47
+WritingOnBoard     1.0000    1.0000    1.0000        80
+        eating     1.0000    0.9750    0.9873        80
+      exercise     1.0000    1.0000    1.0000        79
+      fighting     1.0000    1.0000    1.0000        69
+   No Activity     1.0000    1.0000    1.0000        79
+
+      accuracy                         0.9961       514
+     macro avg     0.9965    0.9964    0.9964       514
+  weighted avg     0.9962    0.9961    0.9961       514
