@@ -118,6 +118,6 @@ Parameters : 497,480  |  Size : 1.90 MB  |  Device : CPU only
 
 ## Tech Stack
 
-`TensorFlow 2.18` · `MediaPipe` · `Streamlit` · `NumPy` · `scikit-learn` · `SQLite` · `ReportLab` · `Render.com`
+`TensorFlow 2.18` · `MediaPipe` · `Streamlit` · `NumPy` · `scikit-learn` · `SQLite` · `ReportLab`
 
 ---
