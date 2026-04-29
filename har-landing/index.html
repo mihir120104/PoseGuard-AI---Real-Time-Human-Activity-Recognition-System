@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>HAR AI Platform — PoseGuard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Syne:wght@700;800&display=swap');
+
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#070A0F;color:#DDE6F0;font-family:'Inter',sans-serif;min-height:100vh;}
+
+  /* ── LANDING ── */
+  #landing{display:flex;flex-direction:column;align-items:center;justify-content:center;
+           min-height:100vh;padding:2rem;text-align:center;}
+  .logo{width:72px;height:72px;border-radius:18px;
+        background:linear-gradient(135deg,#0F3D30,#0A2840);
+        border:1px solid #1A5040;display:flex;align-items:center;
+        justify-content:center;font-size:32px;margin:0 auto 24px;}
+  h1{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;
+     background:linear-gradient(135deg,#E8EDF5,#14B8A6);
+     -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+     margin-bottom:8px;}
+  .subtitle{font-size:1rem;color:#14B8A6;margin-bottom:8px;}
+  .desc{font-size:0.9rem;color:#4A5C74;max-width:500px;line-height:1.7;margin-bottom:32px;}
+  .badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:36px;}
+  .badge{background:#0D1520;border:1px solid #1A2535;color:#14B8A6;
+         padding:5px 14px;border-radius:20px;font-size:0.8rem;}
+
+  /* ── FORM ── */
+  .form-card{background:#0D1520;border:1px solid #1A2535;border-radius:16px;
+             padding:32px 28px;width:100%;max-width:400px;text-align:left;}
+  .form-label{font-size:12px;color:#4A5C74;margin-bottom:6px;display:block;
+              text-transform:uppercase;letter-spacing:.1em;}
+  .form-input{width:100%;background:#070A0F;border:1px solid #1A2535;
+              color:#DDE6F0;padding:12px 14px;border-radius:8px;
+              font-size:14px;outline:none;margin-bottom:16px;
+              font-family:'Inter',sans-serif;transition:border .2s;}
+  .form-input:focus{border-color:#14B8A6;}
+  .btn-primary{width:100%;background:#0F3D30;border:2px solid #14B8A6;
+               color:#14B8A6;padding:14px;border-radius:10px;font-size:1rem;
+               font-weight:600;cursor:pointer;transition:all .2s;
+               font-family:'Inter',sans-serif;}
+  .btn-primary:hover{background:#145C46;}
+  .privacy{font-size:11px;color:#2D3E55;text-align:center;margin-top:14px;}
+
+  /* ── CAMERA PAGE ── */
+  #camera-page{display:none;flex-direction:column;align-items:center;
+               min-height:100vh;padding:1.5rem;}
+  .top-bar{width:100%;max-width:860px;display:flex;align-items:center;
+           justify-content:space-between;margin-bottom:16px;}
+  .user-info{display:flex;align-items:center;gap:10px;}
+  .user-avatar{width:36px;height:36px;border-radius:10px;background:#0A2040;
+               border:1px solid #1A4060;display:flex;align-items:center;
+               justify-content:center;font-size:16px;}
+  .user-name{font-size:14px;font-weight:500;color:#DDE6F0;}
+  .user-mobile{font-size:11px;color:#4A5C74;}
+  .f1-badge{background:#072218;border:1px solid #0A4A2C;color:#22C55E;
+            font-size:10px;padding:3px 10px;border-radius:20px;font-family:monospace;}
+
+  .cam-container{width:100%;max-width:860px;position:relative;}
+  #video{width:100%;border-radius:12px;background:#0D1520;
+         border:1px solid #1A2535;display:block;}
+  #canvas{display:none;}
+
+  .overlay-label{position:absolute;bottom:70px;left:20px;
+                 font-size:1.1rem;font-weight:600;color:#22C55E;
+                 text-shadow:0 0 10px rgba(34,197,94,.4);}
+  .overlay-conf{position:absolute;bottom:46px;left:20px;
+                font-size:0.8rem;color:#888;font-family:monospace;}
+  .conf-bar-bg{position:absolute;bottom:20px;left:20px;right:20px;
+               height:8px;background:#1A2535;border-radius:4px;}
+  .conf-bar-fill{height:8px;background:#22C55E;border-radius:4px;
+                 width:0%;transition:width .3s;}
+  .warning-text{position:absolute;top:14px;left:14px;
+                font-size:0.75rem;color:#60A5FA;
+                background:rgba(6,10,15,.8);padding:4px 10px;border-radius:6px;
+                display:none;}
+
+  .controls{width:100%;max-width:860px;display:flex;gap:12px;margin-top:14px;}
+  .btn-start{flex:1;background:#0F3D30;border:2px solid #14B8A6;color:#14B8A6;
+             padding:14px;border-radius:10px;font-size:1rem;font-weight:600;
+             cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;}
+  .btn-start:hover{background:#145C46;}
+  .btn-stop{flex:1;background:#1A0A0A;border:2px solid #EF4444;color:#EF4444;
+            padding:14px;border-radius:10px;font-size:1rem;font-weight:600;
+            cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;display:none;}
+  .btn-stop:hover{background:#2A0A0A;}
+  .btn-dashboard{flex:1;background:#0A1520;border:1px solid #1A2535;color:#8A9BB5;
+                 padding:14px;border-radius:10px;font-size:1rem;font-weight:500;
+                 cursor:pointer;text-decoration:none;display:flex;align-items:center;
+                 justify-content:center;font-family:'Inter',sans-serif;}
+
+  .status-bar{width:100%;max-width:860px;background:#0D1520;border:1px solid #1A2535;
+              border-radius:10px;padding:12px 16px;margin-top:12px;
+              display:flex;justify-content:space-between;align-items:center;}
+  .status-item{text-align:center;}
+  .status-val{font-size:1.1rem;font-weight:600;color:#14B8A6;font-family:'Syne',sans-serif;}
+  .status-lbl{font-size:10px;color:#2D3E55;text-transform:uppercase;letter-spacing:.1em;}
+
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}
+                   50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+  .live-dot{width:8px;height:8px;border-radius:50%;background:#22C55E;
+            display:inline-block;animation:pulse 1.5s infinite;margin-right:6px;}
+  .not-live-dot{width:8px;height:8px;border-radius:50%;background:#2D3E55;
+                display:inline-block;margin-right:6px;}
+</style>
+</head>
+<body>
+
+<!-- ══ LANDING / REGISTER PAGE ══ -->
+<div id="landing">
+  <div class="logo">🎯</div>
+  <h1>PoseGuard AI</h1>
+  <div class="subtitle">Human Activity Recognition System</div>
+  <p class="desc">Real-time AI that detects your activities through your camera.
+    Powered by a custom CNN + BiLSTM + Attention neural network with 99.61% accuracy.</p>
+  <div class="badges">
+    <span class="badge">99.61% F1</span>
+    <span class="badge">7 Activities</span>
+    <span class="badge">Real-Time AI</span>
+    <span class="badge">Privacy Safe</span>
+  </div>
+
+  <div class="form-card">
+    <div style="font-family:monospace;font-size:10px;color:#2D3E55;letter-spacing:.15em;margin-bottom:20px;">
+      ENTER YOUR DETAILS TO START
+    </div>
+    <label class="form-label">Your Name</label>
+    <input class="form-input" id="inp-name" type="text" placeholder="e.g. Mihir Patel" autocomplete="name"/>
+    <label class="form-label">Mobile Number</label>
+    <input class="form-input" id="inp-mobile" type="tel" placeholder="e.g. 9876543210" autocomplete="tel" maxlength="10"/>
+    <div id="form-error" style="color:#EF4444;font-size:12px;margin-bottom:12px;display:none;"></div>
+    <button class="btn-primary" onclick="startSession()">Continue → Open Camera</button>
+    <p class="privacy">🔒 No data leaves your device. Camera feed is processed locally.</p>
+  </div>
+
+  <div style="margin-top:32px;font-size:13px;color:#2D3E55;">
+    Already have an account?
+    <a id="dashboard-link" href="#" style="color:#14B8A6;text-decoration:none;"
+       onclick="openDashboard()"> View Dashboard →</a>
+  </div>
+</div>
+
+<!-- ══ CAMERA PAGE ══ -->
+<div id="camera-page">
+  <div class="top-bar">
+    <div class="user-info">
+      <div class="user-avatar">👤</div>
+      <div>
+        <div class="user-name" id="display-name">—</div>
+        <div class="user-mobile" id="display-mobile">—</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="live-indicator">
+        <span class="not-live-dot"></span>
+        <span style="font-size:12px;color:#2D3E55;">Camera off</span>
+      </span>
+      <span class="f1-badge">99.61% F1</span>
+    </div>
+  </div>
+
+  <div class="cam-container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="overlay-label" id="overlay-label">Click Start Camera below</div>
+    <div class="overlay-conf" id="overlay-conf"></div>
+    <div class="conf-bar-bg"><div class="conf-bar-fill" id="conf-bar"></div></div>
+    <div class="warning-text" id="warning-text">⚠ Move back — show full body</div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-start" id="btn-start" onclick="startCamera()">▶  Start Camera</button>
+    <button class="btn-stop"  id="btn-stop"  onclick="stopCamera()">⏹  Stop Camera</button>
+    <a class="btn-dashboard" id="btn-dash" href="#" onclick="openDashboard()">📊 View Dashboard</a>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-item">
+      <div class="status-val" id="stat-activity">—</div>
+      <div class="status-lbl">Current Activity</div>
+    </div>
+    <div class="status-item">
+      <div class="status-val" id="stat-conf">—</div>
+      <div class="status-lbl">Confidence</div>
+    </div>
+    <div class="status-item">
+      <div class="status-val" id="stat-saved">0</div>
+      <div class="status-lbl">Records Saved</div>
+    </div>
+    <div class="status-item">
+      <div class="status-val" id="stat-user">—</div>
+      <div class="status-lbl">User</div>
+    </div>
+  </div>
+
+  <!-- Tips -->
+  <div style="width:100%;max-width:860px;margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+    <div style="background:#0D0A04;border:1px solid #4A3800;border-left:3px solid #F59E0B;border-radius:8px;padding:12px 14px;">
+      <div style="color:#F59E0B;font-size:11px;font-weight:600;margin-bottom:4px;">📷 Camera Setup</div>
+      <div style="color:#4A5C74;font-size:11px;line-height:1.6;">Stand 1.5–3m away. Full body from head to hip must be visible. Eye-level camera height.</div>
+    </div>
+    <div style="background:#0D0A04;border:1px solid #4A3800;border-left:3px solid #F59E0B;border-radius:8px;padding:12px 14px;">
+      <div style="color:#F59E0B;font-size:11px;font-weight:600;margin-bottom:4px;">🎯 For Best Results</div>
+      <div style="color:#4A5C74;font-size:11px;line-height:1.6;">Hold each activity for 4+ seconds. Good front-facing light. Avoid window behind you.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══ CONFIG ══
+// Replace with your Render app URL
+const RENDER_URL = "https://poseguard-ai-real-time-human-activity.onrender.com";
+
+let userName   = "";
+let userMobile = "";
+let videoStream = null;
+let savedCount  = 0;
+
+// ── Form validation & session start ──
+function startSession() {
+  const name   = document.getElementById("inp-name").value.trim();
+  const mobile = document.getElementById("inp-mobile").value.trim();
+  const err    = document.getElementById("form-error");
+
+  if (!name || name.length < 2) {
+    err.textContent = "Please enter your full name.";
+    err.style.display = "block"; return;
+  }
+  if (!/^\d{10}$/.test(mobile)) {
+    err.textContent = "Enter a valid 10-digit mobile number.";
+    err.style.display = "block"; return;
+  }
+
+  err.style.display = "none";
+  userName   = name;
+  userMobile = mobile;
+
+  // Store in session
+  sessionStorage.setItem("har_name",   userName);
+  sessionStorage.setItem("har_mobile", userMobile);
+
+  // Show camera page
+  document.getElementById("landing").style.display     = "none";
+  document.getElementById("camera-page").style.display = "flex";
+  document.getElementById("display-name").textContent   = userName;
+  document.getElementById("display-mobile").textContent = "📱 " + userMobile;
+  document.getElementById("stat-user").textContent      = userName.split(" ")[0];
+}
+
+// ── Camera ──
+async function startCamera() {
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      audio: false
+    });
+    const video = document.getElementById("video");
+    video.srcObject = videoStream;
+
+    document.getElementById("btn-start").style.display = "none";
+    document.getElementById("btn-stop").style.display  = "flex";
+    document.getElementById("live-indicator").innerHTML =
+      '<span class="live-dot"></span><span style="font-size:12px;color:#22C55E;">Live</span>';
+    document.getElementById("overlay-label").textContent = "Detecting activities...";
+    document.getElementById("overlay-label").style.color = "#22C55E";
+
+    // Notify Render to start detection for this user
+    notifyServer("start");
+
+    // Poll for results every 3 seconds
+    window._pollInterval = setInterval(pollResults, 3000);
+
+  } catch (e) {
+    alert("Camera access denied. Please allow camera permission and try again.\n\nError: " + e.message);
+  }
+}
+
+function stopCamera() {
+  if (videoStream) {
+    videoStream.getTracks().forEach(t => t.stop());
+    videoStream = null;
+  }
+  clearInterval(window._pollInterval);
+  notifyServer("stop");
+
+  document.getElementById("btn-start").style.display = "flex";
+  document.getElementById("btn-stop").style.display  = "none";
+  document.getElementById("live-indicator").innerHTML =
+    '<span class="not-live-dot"></span><span style="font-size:12px;color:#2D3E55;">Camera off</span>';
+  document.getElementById("overlay-label").textContent = "Camera stopped";
+  document.getElementById("overlay-label").style.color = "#4A5C74";
+  document.getElementById("conf-bar").style.width = "0%";
+}
+
+// ── Tell Render server who is using the camera ──
+function notifyServer(action) {
+  fetch(RENDER_URL + "/camera_event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, username: userName, mobile: userMobile })
+  }).catch(() => {}); // Fails silently if Render is asleep
+}
+
+// ── Poll latest activity from server ──
+function pollResults() {
+  fetch(RENDER_URL + "/latest_activity?username=" + encodeURIComponent(userName))
+    .then(r => r.json())
+    .then(data => {
+      if (data.activity) {
+        document.getElementById("overlay-label").textContent = "Activity: " + data.activity;
+        document.getElementById("overlay-conf").textContent  = "Confidence: " + (data.confidence * 100).toFixed(1) + "%";
+        document.getElementById("conf-bar").style.width      = (data.confidence * 100) + "%";
+        document.getElementById("stat-activity").textContent = data.activity;
+        document.getElementById("stat-conf").textContent     = (data.confidence * 100).toFixed(1) + "%";
+        document.getElementById("stat-saved").textContent    = data.total_records || savedCount;
+
+        // Risk alert
+        if (["fighting","Fighting","falling"].includes(data.activity)) {
+          document.getElementById("overlay-label").style.color = "#EF4444";
+          if (!window._alerted) { window._alerted = true; setTimeout(() => window._alerted = false, 5000); }
+        } else {
+          document.getElementById("overlay-label").style.color = "#22C55E";
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+function openDashboard() {
+  window.open(RENDER_URL, "_blank");
+}
+
+// ── Restore session if returning ──
+window.addEventListener("load", () => {
+  const n = sessionStorage.getItem("har_name");
+  const m = sessionStorage.getItem("har_mobile");
+  if (n && m) {
+    document.getElementById("inp-name").value   = n;
+    document.getElementById("inp-mobile").value = m;
+  }
+  document.getElementById("btn-dash").href = RENDER_URL;
+});
+</script>
+</body>
+</html>
