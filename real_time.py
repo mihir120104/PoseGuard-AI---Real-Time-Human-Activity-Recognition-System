@@ -450,4 +450,3 @@ while cap.isOpened():
 
 cap.release()
 cv2.destroyAllWindows()
-print(f"Detection stopped. User: {HAR_USERNAME}")
