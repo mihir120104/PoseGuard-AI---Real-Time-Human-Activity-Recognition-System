@@ -379,8 +379,14 @@ while cap.isOpened():
         pose_valid = True
     else:
         pose_valid = False
+        # Clear buffers when body is not properly in frame
+        # Prevents stale frames from generating wrong predictions
+        frame_buffer.clear()
+        pred_buffer.clear()
+        display_label  = "Show full body..."
+        display_conf   = 0.0
 
-    if len(frame_buffer) == SEQ_LEN and frame_count % STEP_SIZE == 0:
+    if pose_valid and len(frame_buffer) == SEQ_LEN and frame_count % STEP_SIZE == 0:
         seq_raw  = np.array(frame_buffer)
         seq_norm = zscore_sequence(seq_raw)
         seq      = seq_norm[np.newaxis, ...]

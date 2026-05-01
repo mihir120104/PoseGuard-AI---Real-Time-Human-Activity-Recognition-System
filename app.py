@@ -880,7 +880,7 @@ PAL  = ["#14B8A6","#22C55E","#60A5FA","#A78BFA","#F59E0B","#F43F5E","#FB923C"]
 
 def norm(x): return DN.get(x, x)
 
-for k,v in [("logged_in",False),("page","dashboard"),("cam_pid",None),("username","")]:
+for k,v in [("logged_in",False),("page","dashboard"),("cam_pid",None),("username",""),("cam_started",False)]:
     if k not in st.session_state: st.session_state[k] = v
 
 # ── Helpers ──
@@ -1094,26 +1094,36 @@ elif page == "live":
     with cl:
         st.markdown('<div class="sh">Camera Controls</div>', unsafe_allow_html=True)
         cam_running = st.session_state.cam_pid is not None
+
         if cam_running:
-            st.markdown('<div class="alert-g"><span class="live-dot"></span><span style="color:#22C55E;font-size:12px;font-weight:600;">Camera is RUNNING — detecting activities</span></div>', unsafe_allow_html=True)
+            st.markdown('<div class="alert-g"><span class="live-dot"></span><span style="color:#22C55E;font-size:12px;font-weight:600;">Camera is RUNNING — detecting activities for <b>' + uname + '</b></span></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div style="background:#0D1520;border:1px solid #1A2535;border-radius:8px;padding:10px 14px;font-size:11px;color:#4A5C74;">Camera is stopped. Click Start Camera to begin.</div>', unsafe_allow_html=True)
 
         cc1,cc2 = st.columns(2)
         with cc1:
-            if st.button("▶  Start Camera", type="primary", use_container_width=True):
-                env = os.environ.copy()
-                env["HAR_USERNAME"] = uname
-                proc = subprocess.Popen([sys.executable, "real_time.py"], env=env)
-                st.session_state.cam_pid = proc.pid
-                st.success(f"Camera started for user: {uname}")
+            start_disabled = cam_running
+            if st.button("▶  Start Camera", type="primary", use_container_width=True, disabled=start_disabled):
+                if not st.session_state.cam_started:
+                    st.session_state.cam_started = True
+                    env = os.environ.copy()
+                    env["HAR_USERNAME"] = uname
+                    proc = subprocess.Popen([sys.executable, "real_time.py"], env=env)
+                    st.session_state.cam_pid = proc.pid
+                    st.success(f"✅ Camera started for user: {uname}")
+                    st.rerun()
         with cc2:
-            if st.button("⏹  Stop Camera", use_container_width=True):
+            stop_disabled = not cam_running
+            if st.button("⏹  Stop Camera", use_container_width=True, disabled=stop_disabled):
                 if st.session_state.cam_pid:
                     try:
                         import signal
                         os.kill(st.session_state.cam_pid, signal.SIGTERM)
-                        st.session_state.cam_pid = None
-                        st.success("Camera stopped")
-                    except: st.warning("Press Q in the camera window")
+                    except: pass
+                    st.session_state.cam_pid = None
+                    st.session_state.cam_started = False
+                    st.success("Camera stopped")
+                    st.rerun()
 
         st.markdown('<div class="sh">Tips for Accurate Detection</div>', unsafe_allow_html=True)
         for title,body in [
