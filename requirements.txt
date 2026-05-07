@@ -13,9 +13,23 @@
 # seaborn==0.13.2
 # reportlab==4.4.10
 
-tensorflow-cpu
+# tensorflow-cpu
+# mediapipe==0.10.14
+# opencv-python-headless
+# streamlit==1.41.1
+# pandas==2.2.3
+# scikit-learn==1.5.2
+# numpy==1.26.4
+# matplotlib==3.9.4
+# seaborn==0.13.2
+# reportlab==4.4.10
+# fastapi==0.115.0
+# uvicorn==0.30.6
+# python-multipart==0.0.9
+
+tensorflow-cpu==2.19.1
 mediapipe==0.10.14
-opencv-python-headless
+opencv-python-headless==4.10.0.84
 streamlit==1.41.1
 pandas==2.2.3
 scikit-learn==1.5.2
@@ -26,3 +40,4 @@ reportlab==4.4.10
 fastapi==0.115.0
 uvicorn==0.30.6
 python-multipart==0.0.9
+Pillow==11.3.0
