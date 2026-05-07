@@ -233,8 +233,8 @@ from history_db import (
     save_history,
     get_history,
     init_history_db,
-    register_user,
-    update_last_seen
+    # register_user,
+    # update_last_seen
 )
 
 app = FastAPI(title="HAR AI API")
