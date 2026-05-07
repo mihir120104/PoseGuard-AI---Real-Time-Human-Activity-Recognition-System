@@ -374,8 +374,8 @@ def get_user_summary():
 
 init_history_db()
 def register_user(name: str, mobile: str):
-    pass
+    return True
 
 
 def update_last_seen(mobile: str):
-    pass
+    return True
