@@ -229,13 +229,7 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 from model_utils import load_har_model, DISPLAY_NAME, RISK_ACTIVITIES
-from history_db import (
-    save_history,
-    get_history,
-    init_history_db,
-    # register_user,
-    # update_last_seen
-)
+from history_db import save_history, get_history, init_history_db, register_user, update_last_seen
 
 app = FastAPI(title="HAR AI API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
