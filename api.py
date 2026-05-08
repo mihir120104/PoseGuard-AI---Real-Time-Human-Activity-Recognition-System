@@ -362,18 +362,20 @@
 
 """
 api.py — HAR AI Platform
-FastAPI: accepts browser frames → runs MediaPipe + model → returns activity.
-Also saves user registrations from Vercel form.
+Single-port solution: FastAPI handles /predict /register /health
+Streamlit runs as subprocess and is proxied via /dashboard
 
-Run locally : uvicorn api:app --host 0.0.0.0 --port 8000
-On Render   : started by start.sh alongside app.py
+Run on Render: uvicorn api:app --host 0.0.0.0 --port=$PORT
+Start Command in Render: uvicorn api:app --host 0.0.0.0 --port=$PORT
 """
-import cv2, base64, time
+import cv2, base64, time, subprocess, sys, os
 import numpy as np
 from collections import deque, Counter
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
@@ -382,8 +384,21 @@ from model_utils import load_har_model, DISPLAY_NAME, RISK_ACTIVITIES
 from history_db  import (init_history_db, save_history, get_history,
                           register_user, update_last_seen)
 
-# ── App setup ──
-app = FastAPI(title="HAR AI API")
+# ── Start Streamlit as subprocess on port 8501 ──
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start Streamlit dashboard on internal port 8501
+    proc = subprocess.Popen([
+        sys.executable, "-m", "streamlit", "run", "app.py",
+        "--server.port=8501",
+        "--server.address=0.0.0.0",
+        "--server.headless=true",
+    ])
+    print("Streamlit started on port 8501")
+    yield
+    proc.terminate()
+
+app = FastAPI(title="HAR AI Platform", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -392,13 +407,13 @@ app.add_middleware(
 )
 init_history_db()
 
-# ── Load model ONCE at startup ──
+# ── Load model ONCE ──
 print("Loading HAR model...")
 MODEL   = load_har_model("models/activity_model.keras")
 CLASSES = np.load("classes.npy", allow_pickle=True)
-print(f"Model loaded — {len(CLASSES)} classes: {list(CLASSES)}")
+print(f"Model ready — {len(CLASSES)} classes")
 
-# ── MediaPipe setup ──
+# ── MediaPipe ──
 _base = mp_python.BaseOptions(model_asset_path="pose_landmarker.task")
 _opts = vision.PoseLandmarkerOptions(base_options=_base)
 LAND  = vision.PoseLandmarker.create_from_options(_opts)
@@ -415,74 +430,65 @@ PER_CLASS = {
     "no_activity": 0.70, "no": 0.70,
 }
 
-# ── Per-user frame/prediction buffers (in memory) ──
 BUFFERS: dict = {}
 
-def get_buf(username: str) -> dict:
-    if username not in BUFFERS:
-        BUFFERS[username] = {
-            "frames":    deque(maxlen=SEQ_LEN),
-            "preds":     deque(maxlen=SMOOTH),
-            "last_save": 0.0,
-            "label":     "...",
-            "conf":      0.0,
-        }
-    return BUFFERS[username]
+def get_buf(u):
+    if u not in BUFFERS:
+        BUFFERS[u] = {"frames": deque(maxlen=SEQ_LEN), "preds": deque(maxlen=SMOOTH),
+                      "last_save": 0.0, "label": "...", "conf": 0.0}
+    return BUFFERS[u]
 
-
-def norm_frame(f: np.ndarray) -> np.ndarray:
+def norm_frame(f):
     out = f.copy()
     hc  = (f[23*4:23*4+3] + f[24*4:24*4+3]) / 2.0
     sc  = np.linalg.norm(f[11*4:11*4+3] - f[12*4:12*4+3]) + 1e-6
     for j in range(33):
-        i = j * 4
-        out[i:i+3] = (f[i:i+3] - hc) / sc
+        i = j * 4; out[i:i+3] = (f[i:i+3] - hc) / sc
     return out
 
-
-def zscore(seq: np.ndarray) -> np.ndarray:
+def zscore(seq):
     s = np.std(seq)
     return seq if s < 1e-6 else (seq - np.mean(seq)) / (s + 1e-6)
 
-
-def extract_kp(result) -> np.ndarray | None:
-    if not result.pose_landmarks:
-        return None
+def extract_kp(result):
+    if not result.pose_landmarks: return None
     lms = result.pose_landmarks[0]
     for i in [11, 12, 23, 24]:
-        if lms[i].visibility < 0.5:
-            return None
-    return np.array(
-        [v for lm in lms for v in [lm.x, lm.y, lm.z, lm.visibility]],
-        dtype=np.float32
-    )
+        if lms[i].visibility < 0.5: return None
+    return np.array([v for lm in lms for v in [lm.x,lm.y,lm.z,lm.visibility]], dtype=np.float32)
 
 
 # ══════════════════════════════════════
-# ENDPOINTS
+# ROUTES
 # ══════════════════════════════════════
 
 @app.get("/health")
 async def health():
-    """Check API is running."""
     return {"status": "ok", "model": "loaded", "classes": list(CLASSES)}
+
+
+@app.get("/")
+async def root():
+    """Redirect root to Streamlit dashboard."""
+    return HTMLResponse("""
+    <html><head>
+    <meta http-equiv="refresh" content="0; url=http://poseguard-ai-real-time-human-activity.onrender.com:8501">
+    <script>window.location.href = window.location.origin.replace(':443',':8501').replace('https://','http://');</script>
+    </head><body>
+    <p>Redirecting to dashboard... 
+    <a href="http://poseguard-ai-real-time-human-activity.onrender.com:8501">Click here</a>
+    </p></body></html>
+    """)
 
 
 @app.post("/register")
 async def register(request: Request):
-    """
-    Called when user fills the Vercel form (name + mobile).
-    Saves to registered_users table so admin can see who signed up.
-    """
     try:
-        d      = await request.json()
+        d = await request.json()
         name   = d.get("name", "").strip()
         mobile = d.get("mobile", "").strip()
         if not name or not mobile:
-            return JSONResponse(
-                {"status": "error", "message": "Name and mobile required"},
-                status_code=400
-            )
+            return JSONResponse({"status": "error", "message": "Name and mobile required"}, status_code=400)
         register_user(name, mobile)
         return JSONResponse({"status": "ok", "message": f"Registered {name}"})
     except Exception as e:
@@ -491,11 +497,6 @@ async def register(request: Request):
 
 @app.post("/predict")
 async def predict(request: Request):
-    """
-    Main prediction endpoint.
-    Receives: { frame: base64_jpg, username: str, mobile: str }
-    Returns:  { activity, confidence, pose_valid, is_risk, total_records }
-    """
     try:
         d         = await request.json()
         username  = d.get("username", "unknown")
@@ -505,64 +506,49 @@ async def predict(request: Request):
         if not frame_b64:
             return JSONResponse({"activity": None, "confidence": 0, "pose_valid": False})
 
-        # Decode base64 image
-        img_bytes = base64.b64decode(frame_b64.split(",")[-1])
-        img       = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+        img = cv2.imdecode(
+            np.frombuffer(base64.b64decode(frame_b64.split(",")[-1]), np.uint8),
+            cv2.IMREAD_COLOR
+        )
         if img is None:
             return JSONResponse({"activity": None, "confidence": 0, "pose_valid": False})
 
-        # MediaPipe pose extraction
         rgb    = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         kp     = extract_kp(LAND.detect(mp_img))
         b      = get_buf(username)
 
-        # Body not in frame
         if kp is None:
-            b["frames"].clear()
-            b["preds"].clear()
-            b["label"] = "Show full body..."
-            b["conf"]  = 0.0
-            return JSONResponse({
-                "activity":   None,
-                "label":      "Show full body...",
-                "confidence": 0.0,
-                "pose_valid": False,
-            })
+            b["frames"].clear(); b["preds"].clear()
+            b["label"] = "Show full body..."; b["conf"] = 0.0
+            return JSONResponse({"activity": None, "label": "Show full body...",
+                                 "confidence": 0.0, "pose_valid": False})
 
-        # Add normalized frame to buffer
         b["frames"].append(norm_frame(kp))
 
-        # Predict when we have 60 frames
         if len(b["frames"]) == SEQ_LEN:
-            seq   = zscore(np.array(b["frames"]))[np.newaxis, ...]
-            probs = MODEL.predict(seq, verbose=0)[0]
+            probs = MODEL.predict(zscore(np.array(b["frames"]))[np.newaxis,...], verbose=0)[0]
             idx   = int(np.argmax(probs))
             b["preds"].append((idx, float(probs[idx])))
 
             if len(b["preds"]) >= 3:
                 best, vc = Counter(p[0] for p in b["preds"]).most_common(1)[0]
                 ac       = float(np.mean([p[1] for p in b["preds"] if p[0] == best]))
-                raw_lbl  = CLASSES[best]
-                thr      = PER_CLASS.get(raw_lbl, CONF)
-                v_ratio  = vc / len(b["preds"])
+                rl       = CLASSES[best]
+                thr      = PER_CLASS.get(rl, CONF)
 
-                if ac >= thr and v_ratio >= VOTE:
-                    b["label"] = DISPLAY_NAME.get(raw_lbl, raw_lbl)
+                if ac >= thr and vc / len(b["preds"]) >= VOTE:
+                    b["label"] = DISPLAY_NAME.get(rl, rl)
                     b["conf"]  = ac
-                    # Save to DB every 3 seconds
                     now = time.time()
                     if now - b["last_save"] >= 3.0:
-                        save_history(raw_lbl, ac, username=username, mobile=mobile)
-                        if mobile:
-                            update_last_seen(mobile)
+                        save_history(rl, ac, username=username, mobile=mobile)
+                        if mobile: update_last_seen(mobile)
                         b["last_save"] = now
                 else:
-                    b["label"] = "..."
-                    b["conf"]  = ac
+                    b["label"] = "..."; b["conf"] = ac
 
         total = len(get_history(mobile=mobile)) if mobile else 0
-
         return JSONResponse({
             "activity":      b["label"],
             "confidence":    b["conf"],
@@ -572,19 +558,12 @@ async def predict(request: Request):
         })
 
     except Exception as e:
-        return JSONResponse(
-            {"error": str(e), "activity": None, "confidence": 0},
-            status_code=500
-        )
+        return JSONResponse({"error": str(e), "activity": None, "confidence": 0}, status_code=500)
 
 
 @app.get("/latest_activity")
 async def latest_activity(username: str = "unknown"):
-    """Poll latest prediction for a user — called by browser every 2s."""
     b   = get_buf(username)
     raw = get_history(username=username)
-    return JSONResponse({
-        "activity":      b["label"],
-        "confidence":    b["conf"],
-        "total_records": len(raw),
-    })
+    return JSONResponse({"activity": b["label"], "confidence": b["conf"],
+                         "total_records": len(raw)})
