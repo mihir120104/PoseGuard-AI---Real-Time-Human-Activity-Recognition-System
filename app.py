@@ -807,7 +807,7 @@
 
 """
 app.py — HAR AI Platform (Production)
-Per-user activity tracking. Admin sees all users.
+Admin sees all users + activity data. Users see only their own data.
 Run: streamlit run app.py
 """
 import streamlit as st
@@ -821,8 +821,8 @@ import subprocess, sys, os, sqlite3
 from datetime import datetime, timedelta
 from auth        import login, register, init_db, list_users, delete_user, change_password
 from history_db  import (get_history, get_history_with_users, get_user_summary,
-                          init_history_db, delete_record, update_record,
-                          clear_all, clear_user, save_history)
+                          get_registered_users, init_history_db,
+                          delete_record, update_record, clear_all, clear_user)
 from report_generator import generate_pdf_report
 
 init_db()
@@ -831,7 +831,6 @@ init_history_db()
 st.set_page_config(page_title="HAR AI Platform", page_icon="🎯",
                    layout="wide", initial_sidebar_state="expanded")
 
-# ── CSS ──
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
@@ -850,8 +849,8 @@ section[data-testid="stSidebar"]{background:#040608 !important;border-right:1px 
 .kpi{background:#0D1520;border:1px solid #1A2535;border-radius:12px;padding:18px 20px;position:relative;overflow:hidden;}
 .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--a,#14B8A6);}
 .kpi-l{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:#2D3E55;margin-bottom:8px;}
-.kpi-v{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;color:var(--a,#14B8A6);line-height:1;margin-bottom:5px;}
-.kpi-s{font-size:10px;color:#2D3E55;}
+.kpi-v{font-family:'Syne',sans-serif;font-size:26px;font-weight:700;color:var(--a,#14B8A6);line-height:1;}
+.kpi-s{font-size:10px;color:#2D3E55;margin-top:4px;}
 .sh{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#2D3E55;border-bottom:1px solid #0F1923;padding-bottom:8px;margin:24px 0 14px;}
 .alert-r{background:#0E0507;border:1px solid #4A1020;border-left:3px solid #EF4444;border-radius:8px;padding:14px 18px;margin:10px 0;}
 .alert-g{background:#040E09;border:1px solid #0A4A25;border-left:3px solid #22C55E;border-radius:8px;padding:12px 16px;margin:8px 0;}
@@ -860,42 +859,39 @@ section[data-testid="stSidebar"]{background:#040608 !important;border-right:1px 
 .ptitle{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;color:#DDE6F0;}
 .pmeta{font-family:'JetBrains Mono',monospace;font-size:9px;color:#2D3E55;}
 .pbadge{background:#072218;border:1px solid #0A4A2C;color:#22C55E;font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 10px;border-radius:20px;}
-@keyframes si{0%,100%{opacity:1}50%{opacity:.6}}
-.si{animation:si .6s ease-in-out infinite;}
+@keyframes si{0%,100%{opacity:1}50%{opacity:.6}}.si{animation:si .6s ease-in-out infinite;}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
 .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22C55E;animation:pulse 1.5s infinite;margin-right:6px;}
-.user-card{background:#0D1520;border:1px solid #1A2535;border-radius:10px;padding:14px 16px;margin-bottom:8px;}
 </style>
 """, unsafe_allow_html=True)
 
 SIREN = """<script>(function(){try{const c=new(window.AudioContext||window.webkitAudioContext)();[[440,880,'sawtooth'],[220,440,'square']].forEach(([lo,hi,t])=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type=t;[0,.4,.8,1.2,1.6].forEach((s,i)=>o.frequency.setValueAtTime(i%2?hi:lo,c.currentTime+s));g.gain.setValueAtTime(.25,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+2);o.start();o.stop(c.currentTime+2);});}catch(e){}})();</script>"""
 
-DN   = {"no":"No Activity","no_activity":"No Activity","No Activity":"No Activity",
-        "Drinking":"Drinking","drinking":"Drinking","eating":"Eating","Eating":"Eating",
-        "exercise":"Exercise","Exercise":"Exercise","fighting":"Fighting","Fighting":"Fighting",
-        "Typing":"Typing","typing":"Typing","WritingOnBoard":"Writing on Board",
-        "Writing on Board":"Writing on Board"}
+DN  = {"no":"No Activity","no_activity":"No Activity","No Activity":"No Activity",
+       "drinking":"Drinking","Drinking":"Drinking","eating":"Eating","Eating":"Eating",
+       "exercise":"Exercise","Exercise":"Exercise","fighting":"Fighting","Fighting":"Fighting",
+       "Typing":"Typing","typing":"Typing","WritingOnBoard":"Writing on Board",
+       "Writing on Board":"Writing on Board"}
 RISK = ["fighting","Fighting","falling"]
 PAL  = ["#14B8A6","#22C55E","#60A5FA","#A78BFA","#F59E0B","#F43F5E","#FB923C"]
 
 def norm(x): return DN.get(x, x)
 
-for k,v in [("logged_in",False),("page","dashboard"),("cam_pid",None),("username",""),("cam_started",False)]:
-    if k not in st.session_state: st.session_state[k] = v
+for k,v in [("logged_in",False),("page","dashboard"),("cam_pid",None),
+             ("username",""),("cam_started",False)]:
+    if k not in st.session_state: st.session_state[k]=v
 
-# ── Helpers ──
 def load_df(username=None):
-    is_admin = (username == "admin")
-    raw = get_history(None if is_admin else username)
+    raw = get_history(None if username=="admin" else username)
     if not raw: return pd.DataFrame(columns=["ID","Activity","Confidence","Time"])
-    df = pd.DataFrame(raw, columns=["ID","Activity","Confidence","Time"])
-    df = df[~df["Activity"].isin(["Unknown","...","Warming up..."])]
+    df  = pd.DataFrame(raw, columns=["ID","Activity","Confidence","Time"])
+    df  = df[~df["Activity"].isin(["Unknown","...","Warming up...","Show full body..."])]
     df["Activity"] = df["Activity"].apply(norm)
-    df["Time"] = pd.to_datetime(df["Time"])
+    df["Time"]     = pd.to_datetime(df["Time"])
     return df.sort_values("Time")
 
 def dark_fig(figsize=(7,3.5)):
-    fig,ax = plt.subplots(figsize=figsize)
+    fig,ax=plt.subplots(figsize=figsize)
     fig.patch.set_facecolor("#0D1520"); ax.set_facecolor("#0D1520")
     return fig,ax
 
@@ -904,55 +900,44 @@ def style_ax(ax):
     for sp in ax.spines.values(): sp.set_color("#1A2535")
 
 def read_metrics():
-    m = {}
+    m={}
     if os.path.exists("metrics.txt"):
         try:
             for line in open("metrics.txt"):
-                k,v = line.strip().split(":")
-                m[k.strip()] = float(v.strip())
+                k,v=line.strip().split(":")
+                m[k.strip()]=float(v.strip())
         except: pass
     return m
 
-# ═══════════════════════════
-# LOGIN
-# ═══════════════════════════
+# ═══ LOGIN ═══
 if not st.session_state.logged_in:
-    _,col,_ = st.columns([1,1.2,1])
+    _,col,_=st.columns([1,1.2,1])
     with col:
         st.markdown("""
         <div style="text-align:center;padding:50px 0 36px">
           <div style="width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,#0F3D30,#0A2840);
-               border:1px solid #1A5040;display:inline-flex;align-items:center;justify-content:center;
-               font-size:28px;margin-bottom:22px;">🎯</div>
+               border:1px solid #1A5040;display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:22px;">🎯</div>
           <div style="font-family:'Syne',sans-serif;font-size:30px;font-weight:800;
                background:linear-gradient(135deg,#E8EDF5,#14B8A6);-webkit-background-clip:text;
                -webkit-text-fill-color:transparent;margin-bottom:6px;">HAR AI Platform</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#2D3E55;letter-spacing:.15em;margin-bottom:8px;">HUMAN ACTIVITY RECOGNITION</div>
           <div style="font-size:12px;color:#2D3E55;font-style:italic;margin-bottom:36px;">"Every movement tells a story — we decode it."</div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown('<div style="font-size:11px;color:#2D3E55;margin-bottom:4px;">Username</div>', unsafe_allow_html=True)
-        uname = st.text_input("u", placeholder="Enter username", label_visibility="collapsed", key="li_u")
-        st.markdown('<div style="font-size:11px;color:#2D3E55;margin-bottom:4px;">Password</div>', unsafe_allow_html=True)
-        passw = st.text_input("p", type="password", placeholder="Enter password", label_visibility="collapsed", key="li_p")
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Login  →", use_container_width=True, type="primary"):
-            if login(uname, passw):
-                st.session_state.logged_in = True
-                st.session_state.username  = uname
-                st.session_state.page      = "dashboard"
-                st.rerun()
-            else:
-                st.error("Invalid credentials. Contact your administrator.")
-        st.markdown('<div style="text-align:center;margin-top:16px;font-size:11px;color:#1A2535;">Access granted by administrator only.</div>', unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
+        st.markdown('<div style="font-size:11px;color:#2D3E55;margin-bottom:4px;">Username</div>',unsafe_allow_html=True)
+        uname=st.text_input("u",placeholder="Enter username",label_visibility="collapsed",key="li_u")
+        st.markdown('<div style="font-size:11px;color:#2D3E55;margin-bottom:4px;">Password</div>',unsafe_allow_html=True)
+        passw=st.text_input("p",type="password",placeholder="Enter password",label_visibility="collapsed",key="li_p")
+        st.markdown("<br>",unsafe_allow_html=True)
+        if st.button("Login  →",use_container_width=True,type="primary"):
+            if login(uname,passw):
+                st.session_state.logged_in=True; st.session_state.username=uname
+                st.session_state.page="dashboard"; st.rerun()
+            else: st.error("Invalid credentials.")
     st.stop()
 
 uname    = st.session_state.username
-is_admin = (uname == "admin")
+is_admin = (uname=="admin")
 
-# ═══════════════════════════
-# SIDEBAR
-# ═══════════════════════════
+# ═══ SIDEBAR ═══
 with st.sidebar:
     st.markdown(f"""
     <div style="padding:22px 20px 16px">
@@ -965,31 +950,27 @@ with st.sidebar:
         </div>
       </div>
       {"<div style='display:inline-block;background:#160A30;border:1px solid #3A1A80;color:#A78BFA;font-size:9px;padding:2px 8px;border-radius:10px;font-family:monospace;'>ADMIN</div>" if is_admin else ""}
-    </div>
-    """, unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
 
-    st.markdown('<div style="height:1px;background:#0F1923;margin:0 16px 12px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:1px;background:#0F1923;margin:0 16px 12px;"></div>',unsafe_allow_html=True)
 
-    # Nav — admin gets extra "User Monitor" page
-    nav = [("dashboard","🏠  Overview"),("live","📹  Live Detection"),
-           ("history","📋  My Activity")]
+    nav=[("dashboard","🏠  Overview"),("live","📹  Live Detection"),("history","📋  My Activity")]
     if is_admin:
-        nav += [("users","👥  User Monitor"),("performance","📊  Model Performance"),
-                ("admin","⚙️  Admin Panel")]
+        nav+=[("users","👥  User Monitor"),("performance","📊  Model Performance"),("admin","⚙️  Admin Panel")]
     else:
-        nav += [("performance","📊  Model Performance")]
+        nav+=[("performance","📊  Model Performance")]
 
     for key,label in nav:
-        active = st.session_state.page == key
-        if st.button(label, use_container_width=True,
-                     type="primary" if active else "secondary", key=f"nav_{key}"):
-            st.session_state.page = key; st.rerun()
+        active=st.session_state.page==key
+        if st.button(label,use_container_width=True,
+                     type="primary" if active else "secondary",key=f"nav_{key}"):
+            st.session_state.page=key; st.rerun()
 
-    st.markdown('<div style="height:1px;background:#0F1923;margin:12px 16px;"></div>', unsafe_allow_html=True)
-    m = read_metrics()
+    st.markdown('<div style="height:1px;background:#0F1923;margin:12px 16px;"></div>',unsafe_allow_html=True)
+    m=read_metrics()
     if m:
         st.markdown(f"""<div style="padding:0 16px 16px">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.15em;color:#2D3E55;margin-bottom:8px;">MODEL STATUS</div>
+        <div style="font-family:monospace;font-size:9px;letter-spacing:.15em;color:#2D3E55;margin-bottom:8px;">MODEL STATUS</div>
         <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
           <span style="font-size:11px;color:#2D3E55;">Accuracy</span>
           <span style="font-family:monospace;font-size:11px;color:#22C55E;">{m.get('Accuracy',0)*100:.1f}%</span>
@@ -999,342 +980,284 @@ with st.sidebar:
           <span style="font-family:monospace;font-size:11px;color:#14B8A6;">{m.get('F1',0)*100:.1f}%</span>
         </div></div>""", unsafe_allow_html=True)
 
-    st.markdown('<div style="height:1px;background:#0F1923;margin:0 16px 12px;"></div>', unsafe_allow_html=True)
-    if st.button("⏻  Logout", use_container_width=True):
+    st.markdown('<div style="height:1px;background:#0F1923;margin:0 16px 12px;"></div>',unsafe_allow_html=True)
+    if st.button("⏻  Logout",use_container_width=True):
         st.session_state.logged_in=False; st.session_state.username=""
-        st.session_state.cam_pid=None; st.rerun()
+        st.session_state.cam_pid=None; st.session_state.cam_started=False; st.rerun()
 
-# ── Page header ──
-PTITLES = {
-    "dashboard":   ("Overview","System at a glance"),
-    "live":        ("Live Detection","Start your camera and detect activities"),
-    "history":     ("My Activity","Your personal activity history"),
-    "users":       ("User Monitor","All users and their activities — Admin only"),
-    "performance": ("Model Performance","Accuracy · F1 · Confusion Matrix"),
-    "admin":       ("Admin Panel","User and data management"),
-}
-pt,ps = PTITLES.get(st.session_state.page,("Dashboard",""))
+PTITLES={"dashboard":("Overview","System at a glance"),
+          "live":("Live Detection","Start camera and detect activities"),
+          "history":("My Activity","Your personal activity history"),
+          "users":("User Monitor","All registered users — Admin only"),
+          "performance":("Model Performance","Accuracy · F1 · Confusion Matrix"),
+          "admin":("Admin Panel","User and data management")}
+pt,ps=PTITLES.get(st.session_state.page,("Dashboard",""))
 st.markdown(f"""<div class="phead"><div style="display:flex;align-items:center;justify-content:space-between;">
 <div><div class="ptitle">{pt}</div><div class="pmeta">{ps}</div></div>
 <div style="display:flex;gap:10px;align-items:center;">
   <span class="pbadge">99.61% F1</span>
-  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#1A2535;">{datetime.now().strftime('%d %b %Y  %H:%M')}</span>
+  <span style="font-family:monospace;font-size:9px;color:#1A2535;">{datetime.now().strftime('%d %b %Y  %H:%M')}</span>
   <span style="font-size:11px;color:#4A5C74;">👤 {uname}</span>
 </div></div></div>""", unsafe_allow_html=True)
 
-page = st.session_state.page
+page=st.session_state.page
 
-# ═══════════════════════════
-# OVERVIEW
-# ═══════════════════════════
-if page == "dashboard":
-    df = load_df(uname)
-    m  = read_metrics()
-
-    c1,c2,c3,c4 = st.columns(4)
-    kpis = []
+# ═══ OVERVIEW ═══
+if page=="dashboard":
+    df=load_df(uname); m=read_metrics()
+    c1,c2,c3,c4=st.columns(4)
+    kpis=[]
     if m:
-        kpis = [(c1,"MODEL F1","99.61%","#22C55E","Weighted F1 score"),
-                (c2,"ACCURACY","99.61%","#14B8A6","Test set accuracy")]
+        kpis=[(c1,"MODEL F1","99.61%","#22C55E","Weighted F1"),
+              (c2,"ACCURACY","99.61%","#14B8A6","Test set")]
     if not df.empty:
-        kpis += [(c3,"MY RECORDS",f"{len(df):,}","#60A5FA",f"Recorded by {uname}"),
-                 (c4,"AVG CONFIDENCE",f"{df['Confidence'].mean()*100:.1f}%","#F59E0B","Across all records")]
+        kpis+=[(c3,"MY RECORDS",f"{len(df):,}","#60A5FA",f"By {uname}"),
+               (c4,"AVG CONFIDENCE",f"{df['Confidence'].mean()*100:.1f}%","#F59E0B","All records")]
     for col,lbl,val,color,sub in kpis:
-        col.markdown(f'<div class="kpi" style="--a:{color}"><div class="kpi-l">{lbl}</div><div class="kpi-v">{val}</div><div class="kpi-s">{sub}</div></div>', unsafe_allow_html=True)
+        col.markdown(f'<div class="kpi" style="--a:{color}"><div class="kpi-l">{lbl}</div><div class="kpi-v">{val}</div><div class="kpi-s">{sub}</div></div>',unsafe_allow_html=True)
 
     if not df.empty:
-        risk = df[df["Activity"].isin(RISK)]
+        risk=df[df["Activity"].isin(RISK)]
         if not risk.empty:
-            st.components.v1.html(SIREN, height=0)
-            st.markdown(f'<div class="alert-r si"><span style="color:#EF4444;font-family:monospace;font-size:12px;font-weight:700;">⚠ RISK ACTIVITY — {len(risk)} records ({", ".join(risk["Activity"].unique())}) — Latest: {risk["Time"].max().strftime("%H:%M:%S")}</span></div>', unsafe_allow_html=True)
+            st.components.v1.html(SIREN,height=0)
+            st.markdown(f'<div class="alert-r si"><span style="color:#EF4444;font-family:monospace;font-size:12px;font-weight:700;">⚠ RISK — {len(risk)} records ({", ".join(risk["Activity"].unique())})</span></div>',unsafe_allow_html=True)
 
-    st.markdown('<div class="sh">Your Recent Activity</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sh">Your Recent Activity</div>',unsafe_allow_html=True)
     if df.empty:
-        st.markdown('<div class="alert-w"><span style="color:#F59E0B;font-size:13px;">📷 No activity yet. Go to <b>Live Detection</b> to start your camera.</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="alert-w"><span style="color:#F59E0B;font-size:13px;">📷 No activity yet. Open <a href="https://har-ai-platform.vercel.app" target="_blank" style="color:#14B8A6;">camera page</a> or go to Live Detection.</span></div>',unsafe_allow_html=True)
     else:
-        cl,cr = st.columns([3,2])
+        cl,cr=st.columns([3,2])
         with cl:
-            counts = df["Activity"].value_counts()
-            fig,ax = dark_fig((6,3.5))
-            ax.barh(counts.index[::-1], counts.values[::-1],
-                    color=PAL[:len(counts)], height=0.6, edgecolor="none")
+            counts=df["Activity"].value_counts()
+            fig,ax=dark_fig((6,3.5))
+            ax.barh(counts.index[::-1],counts.values[::-1],color=PAL[:len(counts)],height=0.6,edgecolor="none")
             style_ax(ax)
-            for i,(val) in enumerate(counts.values[::-1]):
-                ax.text(val+0.3, i, str(val), va="center", color="#2D3E55", fontsize=8)
+            for i,val in enumerate(counts.values[::-1]):
+                ax.text(val+0.3,i,str(val),va="center",color="#2D3E55",fontsize=8)
             plt.tight_layout(); st.pyplot(fig); plt.close(fig)
         with cr:
-            rec = df.tail(10)[["Time","Activity","Confidence"]].copy()
-            rec = rec.sort_values("Time", ascending=False)
-            rec["Conf%"] = (rec["Confidence"]*100).round(1)
-            rec["Time"]  = rec["Time"].dt.strftime("%H:%M:%S")
-            rec = rec.drop(columns="Confidence")
-            st.dataframe(rec, use_container_width=True, hide_index=True, height=260,
-                column_config={"Conf%": st.column_config.ProgressColumn(
-                    "Conf%", min_value=0, max_value=100, format="%.1f%%")})
+            rec=df.tail(10)[["Time","Activity","Confidence"]].copy().sort_values("Time",ascending=False)
+            rec["Conf%"]=(rec["Confidence"]*100).round(1)
+            rec["Time"]=rec["Time"].dt.strftime("%H:%M:%S")
+            st.dataframe(rec.drop(columns="Confidence"),use_container_width=True,hide_index=True,height=260,
+                column_config={"Conf%":st.column_config.ProgressColumn("Conf%",min_value=0,max_value=100,format="%.1f%%")})
 
-    st.markdown('<div class="sh">System Pipeline</div>', unsafe_allow_html=True)
-    pc = st.columns(6)
+    st.markdown('<div class="sh">System Pipeline</div>',unsafe_allow_html=True)
+    pc=st.columns(6)
     for col,icon,label,sub,color in [
-        (pc[0],"📹","Camera","Webcam input","#14B8A6"),
-        (pc[1],"🦴","MediaPipe","33 keypoints","#60A5FA"),
-        (pc[2],"📐","Normalize","Hip-center","#14B8A6"),
-        (pc[3],"🔷","CNN","Conv1D","#A78BFA"),
-        (pc[4],"🔄","BiLSTM","Temporal","#A78BFA"),
-        (pc[5],"🏷","Classify","+ Confidence","#22C55E"),
-    ]:
-        col.markdown(f'<div style="background:#0D1520;border:1px solid #1A2535;border-top:2px solid {color};border-radius:10px;padding:14px 10px;text-align:center;"><div style="font-size:20px;margin-bottom:6px;">{icon}</div><div style="font-size:11px;font-weight:500;color:#8A9BB5;">{label}</div><div style="font-size:9px;color:#2D3E55;font-family:monospace;">{sub}</div></div>', unsafe_allow_html=True)
+        (pc[0],"📹","Camera","Browser WebRTC","#14B8A6"),(pc[1],"🦴","MediaPipe","33 keypoints","#60A5FA"),
+        (pc[2],"📐","Normalize","Hip-center","#14B8A6"),(pc[3],"🔷","CNN","Conv1D","#A78BFA"),
+        (pc[4],"🔄","BiLSTM","Temporal","#A78BFA"),(pc[5],"🏷","Classify","+ Confidence","#22C55E")]:
+        col.markdown(f'<div style="background:#0D1520;border:1px solid #1A2535;border-top:2px solid {color};border-radius:10px;padding:14px 10px;text-align:center;"><div style="font-size:20px;margin-bottom:6px;">{icon}</div><div style="font-size:11px;font-weight:500;color:#8A9BB5;">{label}</div><div style="font-size:9px;color:#2D3E55;font-family:monospace;">{sub}</div></div>',unsafe_allow_html=True)
 
-# ═══════════════════════════
-# LIVE DETECTION
-# ═══════════════════════════
-elif page == "live":
-    st.markdown(f'<div class="alert-g"><span class="live-dot"></span><span style="color:#22C55E;font-size:12px;font-weight:600;">Logged in as: <b>{uname}</b> — all detections will be saved under your account</span></div>', unsafe_allow_html=True)
-
-    cl,cr = st.columns([3,2])
+# ═══ LIVE DETECTION ═══
+elif page=="live":
+    st.markdown(f'<div class="alert-g"><span class="live-dot"></span><span style="color:#22C55E;font-size:12px;font-weight:600;">Logged in as: <b>{uname}</b> — detections saved under your account</span></div>',unsafe_allow_html=True)
+    cl,cr=st.columns([3,2])
     with cl:
-        st.markdown('<div class="sh">Camera Controls</div>', unsafe_allow_html=True)
-        cam_running = st.session_state.cam_pid is not None
-
+        st.markdown('<div class="sh">Camera Controls</div>',unsafe_allow_html=True)
+        cam_running=st.session_state.cam_pid is not None
         if cam_running:
-            st.markdown('<div class="alert-g"><span class="live-dot"></span><span style="color:#22C55E;font-size:12px;font-weight:600;">Camera is RUNNING — detecting activities for <b>' + uname + '</b></span></div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div style="background:#0D1520;border:1px solid #1A2535;border-radius:8px;padding:10px 14px;font-size:11px;color:#4A5C74;">Camera is stopped. Click Start Camera to begin.</div>', unsafe_allow_html=True)
-
-        cc1,cc2 = st.columns(2)
+            st.markdown('<div class="alert-g"><span class="live-dot"></span><span style="color:#22C55E;font-size:12px;">Camera RUNNING</span></div>',unsafe_allow_html=True)
+        cc1,cc2=st.columns(2)
         with cc1:
-            start_disabled = cam_running
-            if st.button("▶  Start Camera", type="primary", use_container_width=True, disabled=start_disabled):
+            if st.button("▶  Start Camera",type="primary",use_container_width=True,disabled=cam_running):
                 if not st.session_state.cam_started:
-                    st.session_state.cam_started = True
-                    env = os.environ.copy()
-                    env["HAR_USERNAME"] = uname
-                    proc = subprocess.Popen([sys.executable, "real_time.py"], env=env)
-                    st.session_state.cam_pid = proc.pid
-                    st.success(f"✅ Camera started for user: {uname}")
-                    st.rerun()
+                    st.session_state.cam_started=True
+                    env=os.environ.copy(); env["HAR_USERNAME"]=uname
+                    proc=subprocess.Popen([sys.executable,"real_time.py"],env=env)
+                    st.session_state.cam_pid=proc.pid
+                    st.success(f"Camera started for: {uname}"); st.rerun()
         with cc2:
-            stop_disabled = not cam_running
-            if st.button("⏹  Stop Camera", use_container_width=True, disabled=stop_disabled):
-                if st.session_state.cam_pid:
-                    try:
-                        import signal
-                        os.kill(st.session_state.cam_pid, signal.SIGTERM)
-                    except: pass
-                    st.session_state.cam_pid = None
-                    st.session_state.cam_started = False
-                    st.success("Camera stopped")
-                    st.rerun()
+            if st.button("⏹  Stop Camera",use_container_width=True,disabled=not cam_running):
+                try:
+                    import signal; os.kill(st.session_state.cam_pid,signal.SIGTERM)
+                except: pass
+                st.session_state.cam_pid=None; st.session_state.cam_started=False
+                st.success("Camera stopped"); st.rerun()
 
-        st.markdown('<div class="sh">Tips for Accurate Detection</div>', unsafe_allow_html=True)
+        st.markdown(f"""<div class="alert-w" style="margin-top:16px;">
+        <div style="color:#F59E0B;font-size:12px;font-weight:600;margin-bottom:6px;">🌐 Browser Camera (Recommended)</div>
+        <div style="color:#5A7090;font-size:12px;">For best results on any device, use the browser camera page:<br>
+        <a href="https://har-ai-platform.vercel.app" target="_blank" style="color:#14B8A6;">har-ai-platform.vercel.app →</a></div>
+        </div>""",unsafe_allow_html=True)
+
         for title,body in [
-            ("📷 Camera position","Stand 1.5–3m away. Full body from head to hip must be visible. Eye-level height."),
-            ("🍹 Drinking vs Eating","Hold pose 4+ seconds. Drinking = elbow down. Eating = elbow out to side."),
-            ("🏃 Exercise vs Fighting","Do exercise slowly. Full body visible. Rapid random arm = triggers fighting."),
-            ("💤 No Activity","Stand/sit still 5+ seconds. Both shoulders AND hips must be in frame."),
-        ]:
-            st.markdown(f'<div class="alert-w" style="margin-bottom:6px;"><div style="color:#F59E0B;font-size:11px;font-weight:600;margin-bottom:3px;">{title}</div><div style="color:#5A7090;font-size:11px;">{body}</div></div>', unsafe_allow_html=True)
+            ("📷 Camera position","Stand 1.5–3m away. Full body head to hip must be visible."),
+            ("🍹 Drinking vs Eating","Hold pose 4+ seconds. Drinking = elbow down. Eating = elbow out."),
+            ("⏳ First prediction","Takes 4–5 seconds — model needs 60 frames before predicting.")]:
+            st.markdown(f'<div class="alert-w" style="margin-bottom:6px;"><div style="color:#F59E0B;font-size:11px;font-weight:600;margin-bottom:3px;">{title}</div><div style="color:#5A7090;font-size:11px;">{body}</div></div>',unsafe_allow_html=True)
 
     with cr:
-        st.markdown('<div class="sh">Detection Settings</div>', unsafe_allow_html=True)
-        for k,v in [("Confidence threshold","80% global"),("Smoothing window","20 frames"),
-                    ("Drinking threshold","90%"),("Exercise / Fighting","85% each"),
-                    ("Eating threshold","83%"),("Save interval","Every 3 seconds")]:
-            st.markdown(f'<div style="display:flex;justify-content:space-between;padding:7px 12px;background:#0D1520;border-radius:6px;margin-bottom:3px;border:1px solid #1A2535;"><span style="font-size:11px;color:#2D3E55;">{k}</span><span style="font-family:monospace;font-size:10px;color:#14B8A6;">{v}</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sh">Detection Settings</div>',unsafe_allow_html=True)
+        for k,v in [("Confidence threshold","80%"),("Smoothing window","20 frames"),
+                    ("Drinking threshold","90%"),("Exercise / Fighting","85%"),
+                    ("First prediction delay","~4 seconds"),("Save interval","Every 3 sec")]:
+            st.markdown(f'<div style="display:flex;justify-content:space-between;padding:7px 12px;background:#0D1520;border-radius:6px;margin-bottom:3px;border:1px solid #1A2535;"><span style="font-size:11px;color:#2D3E55;">{k}</span><span style="font-family:monospace;font-size:10px;color:#14B8A6;">{v}</span></div>',unsafe_allow_html=True)
 
-        if os.path.exists("classes.npy"):
-            classes = np.load("classes.npy", allow_pickle=True)
-            st.markdown('<div class="sh">Detectable Activities</div>', unsafe_allow_html=True)
-            for cls in classes:
-                label    = norm(cls)
-                is_risk  = cls.lower() in ["fighting","falling"]
-                color    = "#EF4444" if is_risk else "#14B8A6"
-                badge    = "<span style='font-size:9px;color:#EF4444;font-family:monospace;margin-left:6px;border:1px solid #5B1B1B;padding:1px 5px;border-radius:8px;'>RISK</span>" if is_risk else ""
-                st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #0F1923;"><div style="width:6px;height:6px;border-radius:50%;background:{color};"></div><span style="font-size:12px;color:#5A7090;">{label}</span>{badge}</div>', unsafe_allow_html=True)
-
-# ═══════════════════════════
-# MY ACTIVITY (per-user history)
-# ═══════════════════════════
-elif page == "history":
-    df = load_df(uname)
+# ═══ MY ACTIVITY ═══
+elif page=="history":
+    df=load_df(uname)
     if df.empty:
-        st.markdown('<div class="alert-w"><span style="color:#F59E0B;">No activity recorded yet. Go to Live Detection and start your camera.</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="alert-w"><span style="color:#F59E0B;">No activity recorded yet.</span></div>',unsafe_allow_html=True)
         st.stop()
 
-    with st.expander("🔍 Filters", expanded=False):
-        fc1,fc2,fc3 = st.columns(3)
-        acts = ["All"] + sorted(df["Activity"].unique().tolist())
-        sel  = fc1.selectbox("Activity", acts)
-        minc = fc2.slider("Min Confidence %", 0, 100, 0, 5)
-        drng = fc3.selectbox("Time Range", ["All time","Today","Last 7 days","Last 30 days"])
+    k1,k2,k3,k4=st.columns(4)
+    for col,lbl,val,c in [(k1,"RECORDS",f"{len(df):,}","#22C55E"),
+                           (k2,"AVG CONF",f"{df['Confidence'].mean()*100:.1f}%","#14B8A6"),
+                           (k3,"ACTIVITIES",str(df["Activity"].nunique()),"#A78BFA"),
+                           (k4,"LATEST",df["Time"].max().strftime("%H:%M"),"#F59E0B")]:
+        col.markdown(f'<div class="kpi" style="--a:{c}"><div class="kpi-l">{lbl}</div><div class="kpi-v" style="font-size:22px">{val}</div></div>',unsafe_allow_html=True)
 
-    df_f = df.copy()
-    if sel != "All": df_f = df_f[df_f["Activity"] == sel]
-    df_f = df_f[df_f["Confidence"] >= minc/100]
-    if drng == "Today":         df_f = df_f[df_f["Time"] >= datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)]
-    elif drng == "Last 7 days": df_f = df_f[df_f["Time"] >= datetime.now()-timedelta(days=7)]
-    elif drng == "Last 30 days":df_f = df_f[df_f["Time"] >= datetime.now()-timedelta(days=30)]
-    if df_f.empty: st.warning("No records match filters."); st.stop()
-
-    k1,k2,k3,k4 = st.columns(4)
-    for col,lbl,val,c in [
-        (k1,"MY RECORDS",f"{len(df_f):,}","#22C55E"),
-        (k2,"AVG CONFIDENCE",f"{df_f['Confidence'].mean()*100:.1f}%","#14B8A6"),
-        (k3,"ACTIVITIES",str(df_f["Activity"].nunique()),"#A78BFA"),
-        (k4,"LATEST",df_f["Time"].max().strftime("%H:%M"),"#F59E0B"),
-    ]:
-        col.markdown(f'<div class="kpi" style="--a:{c}"><div class="kpi-l">{lbl}</div><div class="kpi-v" style="font-size:22px">{val}</div></div>', unsafe_allow_html=True)
-
-    ch1,ch2 = st.columns(2)
+    ch1,ch2=st.columns(2)
     with ch1:
-        counts = df_f["Activity"].value_counts()
-        fig,ax = dark_fig((5.5,3.2))
-        ax.bar(counts.index, counts.values, color=PAL[:len(counts)], edgecolor="none", width=0.6)
-        style_ax(ax); ax.tick_params(rotation=25, labelsize=8)
-        for p in ax.patches:
-            ax.text(p.get_x()+p.get_width()/2, p.get_height()+0.2, str(int(p.get_height())),
-                    ha="center", color="#2D3E55", fontsize=8)
+        counts=df["Activity"].value_counts()
+        fig,ax=dark_fig((5.5,3.2))
+        ax.bar(counts.index,counts.values,color=PAL[:len(counts)],edgecolor="none",width=0.6)
+        style_ax(ax); ax.tick_params(rotation=25,labelsize=8)
         plt.tight_layout(); st.pyplot(fig); plt.close(fig)
     with ch2:
-        fig2,ax2 = dark_fig((5.5,3.2))
-        ds = df_f.sort_values("Time")
-        ax2.plot(ds["Time"], ds["Confidence"], color="#14B8A6", linewidth=1, alpha=0.8)
-        ax2.fill_between(ds["Time"], ds["Confidence"], alpha=0.06, color="#14B8A6")
-        ax2.axhline(0.80, color="#F59E0B", linestyle="--", linewidth=0.8, label="80% threshold")
-        ax2.set_ylim(0,1.05); style_ax(ax2); ax2.tick_params(rotation=20, labelsize=7)
-        ax2.legend(facecolor="#0D1520", labelcolor="#2D3E55", fontsize=8)
+        fig2,ax2=dark_fig((5.5,3.2))
+        ds=df.sort_values("Time")
+        ax2.plot(ds["Time"],ds["Confidence"],color="#14B8A6",linewidth=1,alpha=0.8)
+        ax2.fill_between(ds["Time"],ds["Confidence"],alpha=0.06,color="#14B8A6")
+        ax2.axhline(0.80,color="#F59E0B",linestyle="--",linewidth=0.8)
+        ax2.set_ylim(0,1.05); style_ax(ax2); ax2.tick_params(rotation=20,labelsize=7)
         plt.tight_layout(); st.pyplot(fig2); plt.close(fig2)
 
-    st.markdown('<div class="sh">All My Records</div>', unsafe_allow_html=True)
-    disp = df_f[["ID","Time","Activity","Confidence"]].copy()
-    disp["Conf%"] = (disp["Confidence"]*100).round(1)
-    disp["Time"]  = disp["Time"].dt.strftime("%Y-%m-%d %H:%M:%S")
-    disp = disp.drop(columns="Confidence").sort_values("Time", ascending=False)
-    st.dataframe(disp, use_container_width=True, hide_index=True, height=400,
-        column_config={"Conf%": st.column_config.ProgressColumn("Conf%", min_value=0, max_value=100, format="%.1f%%")})
+    st.markdown('<div class="sh">All My Records</div>',unsafe_allow_html=True)
+    disp=df[["ID","Time","Activity","Confidence"]].copy()
+    disp["Conf%"]=(disp["Confidence"]*100).round(1)
+    disp["Time"]=disp["Time"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    disp=disp.drop(columns="Confidence").sort_values("Time",ascending=False)
+    st.dataframe(disp,use_container_width=True,hide_index=True,height=400,
+        column_config={"Conf%":st.column_config.ProgressColumn("Conf%",min_value=0,max_value=100,format="%.1f%%")})
 
-    e1,e2 = st.columns(2)
+    e1,e2=st.columns(2)
     with e1:
-        st.download_button("📥 Download CSV", df_f.to_csv(index=False).encode(),
-            f"my_activity_{uname}.csv", use_container_width=True, mime="text/csv")
+        st.download_button("📥 Download CSV",df.to_csv(index=False).encode(),
+            f"activity_{uname}.csv",use_container_width=True,mime="text/csv")
     with e2:
-        if st.button("📄 Generate PDF", use_container_width=True, type="primary"):
+        if st.button("📄 Generate PDF",use_container_width=True,type="primary"):
             with st.spinner("Building PDF..."):
                 try:
-                    pdf = generate_pdf_report(df_f)
-                    st.download_button("⬇️ Download PDF", pdf,
-                        f"activity_report_{uname}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                        mime="application/pdf", use_container_width=True)
-                except Exception as e:
-                    st.error(f"PDF error: {e}")
+                    pdf=generate_pdf_report(df)
+                    st.download_button("⬇️ Download PDF",pdf,
+                        f"report_{uname}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",use_container_width=True)
+                except Exception as e: st.error(f"PDF error: {e}")
 
-# ═══════════════════════════
-# USER MONITOR (admin only)
-# ═══════════════════════════
-elif page == "users":
-    if not is_admin:
-        st.error("Admin access required."); st.stop()
+# ═══ USER MONITOR (admin only) ═══
+elif page=="users":
+    if not is_admin: st.error("Admin access required."); st.stop()
 
-    st.markdown('<div class="sh">All Users — Activity Summary</div>', unsafe_allow_html=True)
+    tab1,tab2=st.tabs(["📋 Registered Users (from Vercel)","📊 Activity by User"])
 
-    summary = get_user_summary()
-    if not summary:
-        st.info("No activity data yet."); st.stop()
+    with tab1:
+        st.markdown('<div class="sh">Users who registered on Vercel camera page</div>',unsafe_allow_html=True)
+        reg=get_registered_users()
+        if reg:
+            rdf=pd.DataFrame(reg,columns=["ID","Name","Mobile","Registered","Last Seen"])
+            # KPIs
+            ka,kb,kc=st.columns(3)
+            ka.markdown(f'<div class="kpi" style="--a:#60A5FA"><div class="kpi-l">TOTAL REGISTERED</div><div class="kpi-v" style="font-size:24px">{len(rdf)}</div></div>',unsafe_allow_html=True)
+            # active today
+            today=datetime.now().strftime("%Y-%m-%d")
+            active_today=rdf[rdf["Last Seen"].str.startswith(today)].shape[0]
+            kb.markdown(f'<div class="kpi" style="--a:#22C55E"><div class="kpi-l">ACTIVE TODAY</div><div class="kpi-v" style="font-size:24px">{active_today}</div></div>',unsafe_allow_html=True)
+            kc.markdown(f'<div class="kpi" style="--a:#F59E0B"><div class="kpi-l">LATEST USER</div><div class="kpi-v" style="font-size:18px">{rdf.iloc[0]["Name"] if len(rdf)>0 else "—"}</div></div>',unsafe_allow_html=True)
+            st.markdown('<div class="sh">All Registered Users</div>',unsafe_allow_html=True)
+            st.dataframe(rdf,use_container_width=True,hide_index=True,height=400)
+            st.download_button("📥 Download Users CSV",rdf.to_csv(index=False).encode(),
+                "registered_users.csv",use_container_width=True,mime="text/csv")
+        else:
+            st.markdown('<div class="alert-w"><span style="color:#F59E0B;">No users registered yet. Share the Vercel link for users to register.</span></div>',unsafe_allow_html=True)
+            st.markdown(f"""<div style="background:#0D1520;border:1px solid #14B8A6;border-radius:10px;padding:16px 20px;margin-top:12px;">
+            <div style="font-size:12px;color:#2D3E55;margin-bottom:6px;">Share this link with users:</div>
+            <div style="font-family:monospace;font-size:14px;color:#14B8A6;">https://har-ai-platform.vercel.app</div>
+            </div>""",unsafe_allow_html=True)
 
-    # Summary KPIs
-    total_users    = len(summary)
-    total_records  = sum(s[1] for s in summary)
-    active_today   = 0
-    raw_all = get_history_with_users()
-    if raw_all:
-        df_all = pd.DataFrame(raw_all, columns=["ID","Username","Activity","Confidence","Time"])
-        df_all["Activity"] = df_all["Activity"].apply(norm)
-        df_all["Time"] = pd.to_datetime(df_all["Time"])
-        today_cutoff = datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
-        active_today = df_all[df_all["Time"] >= today_cutoff]["Username"].nunique()
-        risk_all = df_all[df_all["Activity"].isin(RISK)]
-        if not risk_all.empty:
-            st.components.v1.html(SIREN, height=0)
-            st.markdown(f'<div class="alert-r si"><span style="color:#EF4444;font-family:monospace;font-size:12px;font-weight:700;">⚠ RISK ACTIVITY DETECTED — Users: {", ".join(risk_all["Username"].unique())} — Latest: {risk_all["Time"].max().strftime("%H:%M:%S")}</span></div>', unsafe_allow_html=True)
+    with tab2:
+        st.markdown('<div class="sh">Activity records grouped by user</div>',unsafe_allow_html=True)
+        raw_all=get_history_with_users()
+        if raw_all:
+            df_all=pd.DataFrame(raw_all,columns=["ID","Username","Mobile","Activity","Confidence","Time"])
+            df_all["Activity"]=df_all["Activity"].apply(norm)
+            df_all=df_all[~df_all["Activity"].isin(["Show full body...","..."])]
+            df_all["Time"]=pd.to_datetime(df_all["Time"])
 
-    ka,kb,kc = st.columns(3)
-    for col,lbl,val,c in [(ka,"TOTAL USERS",str(total_users),"#60A5FA"),
-                           (kb,"TOTAL RECORDS",f"{total_records:,}","#22C55E"),
-                           (kc,"ACTIVE TODAY",str(active_today),"#F59E0B")]:
-        col.markdown(f'<div class="kpi" style="--a:{c}"><div class="kpi-l">{lbl}</div><div class="kpi-v" style="font-size:24px">{val}</div></div>', unsafe_allow_html=True)
+            # Risk check
+            risk_all=df_all[df_all["Activity"].isin(RISK)]
+            if not risk_all.empty:
+                st.components.v1.html(SIREN,height=0)
+                st.markdown(f'<div class="alert-r si"><span style="color:#EF4444;font-family:monospace;font-size:12px;font-weight:700;">⚠ RISK — Users: {", ".join(risk_all["Username"].unique())}</span></div>',unsafe_allow_html=True)
 
-    st.markdown('<div class="sh">Per-User Activity</div>', unsafe_allow_html=True)
+            # Summary KPIs
+            ka,kb,kc,kd=st.columns(4)
+            for col,lbl,val,c in [
+                (ka,"TOTAL RECORDS",f"{len(df_all):,}","#22C55E"),
+                (kb,"UNIQUE USERS",str(df_all["Username"].nunique()),"#60A5FA"),
+                (kc,"UNIQUE MOBILES",str(df_all["Mobile"].nunique()),"#A78BFA"),
+                (kd,"AVG CONFIDENCE",f"{df_all['Confidence'].mean()*100:.1f}%","#F59E0B")]:
+                col.markdown(f'<div class="kpi" style="--a:{c}"><div class="kpi-l">{lbl}</div><div class="kpi-v" style="font-size:22px">{val}</div></div>',unsafe_allow_html=True)
 
-    # User cards
-    for row in summary:
-        su_name, su_count, su_last = row
-        with st.expander(f"👤 {su_name}  —  {su_count} records  |  Last: {su_last}", expanded=False):
-            su_raw = get_history(username=su_name)
-            if su_raw:
-                su_df = pd.DataFrame(su_raw, columns=["ID","Activity","Confidence","Time"])
-                su_df["Activity"] = su_df["Activity"].apply(norm)
-                su_df["Time"] = pd.to_datetime(su_df["Time"])
+            # Per-user expanders
+            summary=get_user_summary()
+            for row in summary:
+                su_name,su_mobile,su_count,su_last=row
+                with st.expander(f"👤 {su_name}  |  📱 {su_mobile}  |  {su_count} records  |  Last: {su_last}",expanded=False):
+                    su_df=df_all[df_all["Mobile"]==su_mobile].copy() if su_mobile else df_all[df_all["Username"]==su_name].copy()
+                    if not su_df.empty:
+                        sc1,sc2,sc3=st.columns(3)
+                        sc1.metric("Records",len(su_df))
+                        sc2.metric("Avg Confidence",f"{su_df['Confidence'].mean()*100:.1f}%")
+                        sc3.metric("Most Common",su_df["Activity"].mode()[0])
+                        counts=su_df["Activity"].value_counts()
+                        fig,ax=dark_fig((6,2.2))
+                        ax.barh(counts.index[::-1],counts.values[::-1],color=PAL[:len(counts)],height=0.5,edgecolor="none")
+                        style_ax(ax); plt.tight_layout(); st.pyplot(fig); plt.close(fig)
+                        disp=su_df[["Time","Activity","Confidence"]].copy()
+                        disp["Conf%"]=(disp["Confidence"]*100).round(1)
+                        disp["Time"]=disp["Time"].dt.strftime("%Y-%m-%d %H:%M:%S")
+                        st.dataframe(disp.drop(columns="Confidence").sort_values("Time",ascending=False),
+                                    use_container_width=True,hide_index=True,height=220)
 
-                sc1,sc2,sc3 = st.columns(3)
-                sc1.metric("Records", len(su_df))
-                sc2.metric("Avg Confidence", f"{su_df['Confidence'].mean()*100:.1f}%")
-                sc3.metric("Most Common", su_df["Activity"].mode()[0] if not su_df.empty else "—")
+            # Full table
+            st.markdown('<div class="sh">All Records — All Users</div>',unsafe_allow_html=True)
+            disp_all=df_all[["Time","Username","Mobile","Activity","Confidence"]].copy()
+            disp_all["Conf%"]=(disp_all["Confidence"]*100).round(1)
+            disp_all["Time"]=disp_all["Time"].dt.strftime("%Y-%m-%d %H:%M:%S")
+            st.dataframe(disp_all.drop(columns="Confidence").sort_values("Time",ascending=False),
+                        use_container_width=True,hide_index=True,height=400,
+                column_config={"Conf%":st.column_config.ProgressColumn("Conf%",min_value=0,max_value=100,format="%.1f%%")})
+            st.download_button("📥 Download All CSV",df_all.to_csv(index=False).encode(),
+                "all_users_activity.csv",use_container_width=True,mime="text/csv")
+        else:
+            st.info("No activity data yet.")
 
-                # Mini chart
-                counts = su_df["Activity"].value_counts()
-                fig,ax = dark_fig((6,2.5))
-                ax.barh(counts.index[::-1], counts.values[::-1],
-                        color=PAL[:len(counts)], height=0.5, edgecolor="none")
-                style_ax(ax)
-                plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-
-                # Records table
-                disp = su_df[["Time","Activity","Confidence"]].copy()
-                disp["Conf%"] = (disp["Confidence"]*100).round(1)
-                disp["Time"] = disp["Time"].dt.strftime("%Y-%m-%d %H:%M:%S")
-                disp = disp.drop(columns="Confidence").sort_values("Time", ascending=False)
-                st.dataframe(disp, use_container_width=True, hide_index=True, height=250)
-
-    # Full combined table
-    st.markdown('<div class="sh">All Records — All Users</div>', unsafe_allow_html=True)
-    if raw_all:
-        disp_all = df_all[["Time","Username","Activity","Confidence"]].copy()
-        disp_all["Conf%"] = (disp_all["Confidence"]*100).round(1)
-        disp_all["Time"] = disp_all["Time"].dt.strftime("%Y-%m-%d %H:%M:%S")
-        disp_all = disp_all.drop(columns="Confidence").sort_values("Time", ascending=False)
-        st.dataframe(disp_all, use_container_width=True, hide_index=True, height=400,
-            column_config={"Conf%": st.column_config.ProgressColumn("Conf%", min_value=0, max_value=100, format="%.1f%%")})
-        st.download_button("📥 Download All Users CSV",
-            df_all.to_csv(index=False).encode(), "all_users_activity.csv",
-            use_container_width=True, mime="text/csv")
-
-# ═══════════════════════════
-# MODEL PERFORMANCE
-# ═══════════════════════════
-elif page == "performance":
-    m = read_metrics()
-    if not m:
-        st.warning("Run `python test_model.py` to generate metrics.")
+# ═══ MODEL PERFORMANCE ═══
+elif page=="performance":
+    m=read_metrics()
+    if not m: st.warning("Run `python test_model.py` to generate metrics.")
     else:
-        cols = st.columns(5)
+        cols=st.columns(5)
         for col,lbl,key,color,sub in [
             (cols[0],"ACCURACY","Accuracy","#22C55E","Test set"),
-            (cols[1],"WEIGHTED F1","F1","#14B8A6","Final score"),
+            (cols[1],"WEIGHTED F1","F1","#14B8A6","Final"),
             (cols[2],"MACRO F1","F1_macro","#14B8A6","Equal weight"),
             (cols[3],"TOP-2 ACC","Top2_accuracy","#F59E0B","In top 2"),
-            (cols[4],"AVG CONF","Avg_confidence","#F59E0B","Mean conf"),
-        ]:
-            col.markdown(f'<div class="kpi" style="--a:{color}"><div class="kpi-l">{lbl}</div><div class="kpi-v">{m.get(key,0)*100:.2f}%</div><div class="kpi-s">{sub}</div></div>', unsafe_allow_html=True)
-
+            (cols[4],"AVG CONF","Avg_confidence","#F59E0B","Mean")]:
+            col.markdown(f'<div class="kpi" style="--a:{color}"><div class="kpi-l">{lbl}</div><div class="kpi-v">{m.get(key,0)*100:.2f}%</div><div class="kpi-s">{sub}</div></div>',unsafe_allow_html=True)
     try:
-        cm = np.load("confusion.npy"); classes = np.load("classes.npy", allow_pickle=True)
-        cl,cr = st.columns([3,2])
+        cm=np.load("confusion.npy"); classes=np.load("classes.npy",allow_pickle=True)
+        cl,cr=st.columns([3,2])
         with cl:
-            fig,ax = plt.subplots(figsize=(7,5.5))
+            fig,ax=plt.subplots(figsize=(7,5.5))
             fig.patch.set_facecolor("#0D1520"); ax.set_facecolor("#0D1520")
-            cm_n = cm.astype(float)/(cm.sum(axis=1,keepdims=True)+1e-8)
-            sns.heatmap(cm_n, annot=cm, fmt="d", cmap=sns.color_palette("rocket_r",as_cmap=True),
-                        xticklabels=[norm(c) for c in classes], yticklabels=[norm(c) for c in classes],
-                        linewidths=0.5, linecolor="#070A0F", ax=ax, vmin=0, vmax=1,
+            cm_n=cm.astype(float)/(cm.sum(axis=1,keepdims=True)+1e-8)
+            sns.heatmap(cm_n,annot=cm,fmt="d",cmap=sns.color_palette("rocket_r",as_cmap=True),
+                        xticklabels=[norm(c) for c in classes],yticklabels=[norm(c) for c in classes],
+                        linewidths=0.5,linecolor="#070A0F",ax=ax,vmin=0,vmax=1,
                         cbar_kws={"shrink":.75,"pad":.02})
             ax.set_xlabel("Predicted",color="#2D3E55",fontsize=10)
             ax.set_ylabel("Actual",color="#2D3E55",fontsize=10)
@@ -1346,92 +1269,84 @@ elif page == "performance":
                 tp=cm[i,i]; fn=cm[i,:].sum()-tp; fp=cm[:,i].sum()-tp
                 pr=tp/(tp+fp+1e-8); rc=tp/(tp+fn+1e-8); f1c=2*pr*rc/(pr+rc+1e-8)
                 rows.append({"Class":norm(cls),"Prec":f"{pr:.3f}","Rec":f"{rc:.3f}","F1":f"{f1c:.3f}"})
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=260)
+            st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True,height=260)
     except: st.info("Run test_model.py to generate confusion matrix.")
 
-# ═══════════════════════════
-# ADMIN PANEL
-# ═══════════════════════════
-elif page == "admin":
-    if not is_admin:
-        st.error("Admin access required."); st.stop()
-
-    tab1,tab2,tab3,tab4 = st.tabs(["👥 Users","📋 Records","🔑 Passwords","🖥 System"])
+# ═══ ADMIN PANEL ═══
+elif page=="admin":
+    if not is_admin: st.error("Admin access required."); st.stop()
+    tab1,tab2,tab3,tab4=st.tabs(["👥 Users","📋 Records","🔑 Passwords","🖥 System"])
 
     with tab1:
-        st.markdown('<div class="sh">User Management</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sh">Dashboard Users (login accounts)</div>',unsafe_allow_html=True)
         try:
-            conn = sqlite3.connect("users.db")
-            udf  = pd.read_sql("SELECT id,username FROM users", conn); conn.close()
-            st.dataframe(udf, use_container_width=True, hide_index=True, height=200)
+            conn=sqlite3.connect("users.db")
+            udf=pd.read_sql("SELECT id,username FROM users",conn); conn.close()
+            st.dataframe(udf,use_container_width=True,hide_index=True,height=180)
         except Exception as e: st.warning(f"Could not load users: {e}")
         st.divider()
-        ua1,ua2 = st.columns(2)
+        ua1,ua2=st.columns(2)
         with ua1:
-            st.markdown("**Add new user**")
-            nu  = st.text_input("Username", key="nu")
-            np_ = st.text_input("Password", type="password", key="np_")
-            if st.button("✅ Create User", type="primary", key="cu"):
+            st.markdown("**Add user**")
+            nu=st.text_input("Username",key="nu"); np_=st.text_input("Password",type="password",key="np_")
+            if st.button("✅ Create",type="primary",key="cu"):
                 if nu and np_:
-                    if register(nu,np_): st.success(f"User '{nu}' created"); st.rerun()
-                    else: st.error(f"'{nu}' already exists")
+                    if register(nu,np_): st.success(f"'{nu}' created"); st.rerun()
+                    else: st.error(f"'{nu}' exists")
                 else: st.warning("Fill both fields")
         with ua2:
             st.markdown("**Remove user**")
-            ulist = [u for u in list_users() if u != "admin"]
+            ulist=[u for u in list_users() if u!="admin"]
             if ulist:
-                du = st.selectbox("Select user", ulist, key="du")
-                if st.button("🗑 Remove User", type="primary", key="ru"):
+                du=st.selectbox("Select",ulist,key="du")
+                if st.button("🗑 Remove",type="primary",key="ru"):
                     if delete_user(du): st.success(f"Removed '{du}'"); st.rerun()
             else: st.info("No non-admin users")
 
     with tab2:
-        st.markdown('<div class="sh">Activity Records</div>', unsafe_allow_html=True)
-        raw = get_history_with_users()
+        st.markdown('<div class="sh">Activity Records</div>',unsafe_allow_html=True)
+        raw=get_history_with_users()
         if raw:
-            da = pd.DataFrame(raw, columns=["ID","Username","Activity","Confidence","Time"])
-            st.dataframe(da, use_container_width=True, hide_index=True, height=260)
+            da=pd.DataFrame(raw,columns=["ID","Username","Mobile","Activity","Confidence","Time"])
+            st.dataframe(da,use_container_width=True,hide_index=True,height=250)
             st.divider()
-            da1,da2,da3 = st.columns(3)
+            da1,da2,da3=st.columns(3)
             with da1:
-                did = st.number_input("Delete record ID", min_value=1, step=1, key="did")
-                if st.button("🗑 Delete", type="primary", key="dr"):
+                did=st.number_input("Delete ID",min_value=1,step=1,key="did")
+                if st.button("🗑 Delete",type="primary",key="dr"):
                     delete_record(int(did)); st.success("Deleted"); st.rerun()
             with da2:
-                clu = st.selectbox("Clear all records for user",
-                    ["— select —"] + list_users(), key="clu")
-                if st.button("🗑 Clear User Records", key="clu_btn"):
-                    if clu != "— select —":
-                        clear_user(clu); st.success(f"Cleared records for '{clu}'"); st.rerun()
+                clu=st.selectbox("Clear user records",["— select —"]+list_users(),key="clu")
+                if st.button("🗑 Clear User",key="clu_btn"):
+                    if clu!="— select —":
+                        clear_user(clu); st.success(f"Cleared '{clu}'"); st.rerun()
             with da3:
-                st.markdown('<div class="alert-r">', unsafe_allow_html=True)
-                if st.button("🗑 Clear ALL Records", key="ca"):
+                if st.button("🗑 Clear ALL Records",key="ca"):
                     clear_all(); st.success("All cleared"); st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
         else: st.info("No records yet.")
 
     with tab3:
-        st.markdown('<div class="sh">Change Password</div>', unsafe_allow_html=True)
-        cp_u = st.selectbox("User", list_users(), key="cp_u")
-        cp_n = st.text_input("New Password", type="password", key="cp_n")
-        cp_c = st.text_input("Confirm", type="password", key="cp_c")
-        if st.button("🔑 Change Password", type="primary", key="chpw"):
-            if cp_n != cp_c: st.error("Passwords do not match")
-            elif len(cp_n) < 6: st.error("Min 6 characters")
+        cp_u=st.selectbox("User",list_users(),key="cp_u")
+        cp_n=st.text_input("New Password",type="password",key="cp_n")
+        cp_c=st.text_input("Confirm",type="password",key="cp_c")
+        if st.button("🔑 Change",type="primary",key="chpw"):
+            if cp_n!=cp_c: st.error("Mismatch")
+            elif len(cp_n)<6: st.error("Min 6 chars")
             else:
-                if change_password(cp_u, cp_n): st.success(f"Changed for '{cp_u}'")
+                if change_password(cp_u,cp_n): st.success(f"Changed for '{cp_u}'")
 
     with tab4:
-        st.markdown('<div class="sh">File Status</div>', unsafe_allow_html=True)
-        files = ["features.npy","labels.npy","classes.npy","confusion.npy","metrics.txt",
-                 "models/activity_model.keras","history.db","users.db","model_utils.py"]
-        rows  = [{"File":f, "Status":"✅ OK" if os.path.exists(f) else "❌ MISSING",
-                  "Size":f"{os.path.getsize(f)/1024:.1f} KB" if os.path.exists(f) else "—"}
-                 for f in files]
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        env = [{"Key":"Python","Value":sys.version.split()[0]},
-               {"Key":"User","Value":uname},{"Key":"Platform","Value":sys.platform}]
+        files=["classes.npy","confusion.npy","metrics.txt",
+               "models/activity_model.keras","pose_landmarker.task",
+               "history.db","users.db","model_utils.py","api.py"]
+        rows=[{"File":f,"Status":"✅ OK" if os.path.exists(f) else "❌ MISSING",
+               "Size":f"{os.path.getsize(f)/1024:.1f} KB" if os.path.exists(f) else "—"}
+              for f in files]
+        st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
+        env=[{"Key":"Python","Value":sys.version.split()[0]},
+             {"Key":"Platform","Value":sys.platform},
+             {"Key":"User","Value":uname}]
         try:
             import tensorflow as tf; env.append({"Key":"TensorFlow","Value":tf.__version__})
         except: pass
-        st.dataframe(pd.DataFrame(env), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(env),use_container_width=True,hide_index=True)
