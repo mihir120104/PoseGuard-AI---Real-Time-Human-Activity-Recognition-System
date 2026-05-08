@@ -214,13 +214,162 @@
 # async def health():
 #     return {"status": "ok", "model": "loaded", "classes": list(CLASSES)}
 
+# """
+# api.py — HAR AI Platform
+# FastAPI backend: accepts frames from browser, runs pose + model, returns activity.
+# Also handles user registration from Vercel landing page.
+# Run: uvicorn api:app --host 0.0.0.0 --port 8000
+# """
+# import os, io, cv2, base64, time, numpy as np
+# from collections import deque, Counter
+# from fastapi import FastAPI, Request
+# from fastapi.middleware.cors import CORSMiddleware
+# from fastapi.responses import JSONResponse
+# import mediapipe as mp
+# from mediapipe.tasks import python as mp_python
+# from mediapipe.tasks.python import vision
+# from model_utils import load_har_model, DISPLAY_NAME, RISK_ACTIVITIES
+# from history_db import save_history, get_history, init_history_db, register_user, update_last_seen
+
+# app = FastAPI(title="HAR AI API")
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# init_history_db()
+
+# # ── Load model once ──
+# print("Loading HAR model for API...")
+# MODEL   = load_har_model("models/activity_model.keras")
+# CLASSES = np.load("classes.npy", allow_pickle=True)
+# print(f"API ready — {len(CLASSES)} classes")
+
+# # ── MediaPipe ──
+# _base = mp_python.BaseOptions(model_asset_path="pose_landmarker.task")
+# _opts = vision.PoseLandmarkerOptions(base_options=_base)
+# LAND  = vision.PoseLandmarker.create_from_options(_opts)
+
+# SEQ_LEN=60; CONF=0.80; SMOOTH=20; VOTE=0.65
+# PER_CLASS={"Drinking":0.90,"drinking":0.90,"exercise":0.85,"fighting":0.85,
+#            "eating":0.83,"Eating":0.83,"no_activity":0.70,"no":0.70}
+
+# # Per-user state
+# BUFFERS: dict = {}
+
+# def buf(u):
+#     if u not in BUFFERS:
+#         BUFFERS[u]={"frames":deque(maxlen=SEQ_LEN),"preds":deque(maxlen=SMOOTH),
+#                     "last_save":0.0,"label":"...","conf":0.0}
+#     return BUFFERS[u]
+
+# def norm_frame(f):
+#     out=f.copy()
+#     hc=(f[23*4:23*4+3]+f[24*4:24*4+3])/2
+#     sc=np.linalg.norm(f[11*4:11*4+3]-f[12*4:12*4+3])+1e-6
+#     for j in range(33):
+#         i=j*4; out[i:i+3]=(f[i:i+3]-hc)/sc
+#     return out
+
+# def zscore(seq):
+#     s=np.std(seq); return seq if s<1e-6 else (seq-np.mean(seq))/(s+1e-6)
+
+# def keypoints(result):
+#     if not result.pose_landmarks: return None
+#     lms=result.pose_landmarks[0]
+#     for i in [11,12,23,24]:
+#         if lms[i].visibility<0.5: return None
+#     return np.array([v for lm in lms for v in [lm.x,lm.y,lm.z,lm.visibility]],dtype=np.float32)
+
+
+# @app.post("/register")
+# async def register(request: Request):
+#     """Called by Vercel form — saves name+mobile to DB."""
+#     try:
+#         d = await request.json()
+#         name   = d.get("name","").strip()
+#         mobile = d.get("mobile","").strip()
+#         if name and mobile:
+#             register_user(name, mobile)
+#             return JSONResponse({"status":"ok","message":f"Registered {name}"})
+#         return JSONResponse({"status":"error","message":"Missing name or mobile"},status_code=400)
+#     except Exception as e:
+#         return JSONResponse({"status":"error","message":str(e)},status_code=500)
+
+
+# @app.post("/predict")
+# async def predict(request: Request):
+#     """Accepts base64 frame + username + mobile, returns activity."""
+#     try:
+#         d        = await request.json()
+#         username = d.get("username","unknown")
+#         mobile   = d.get("mobile","")
+#         frame_b64= d.get("frame","")
+#         if not frame_b64:
+#             return JSONResponse({"activity":None,"confidence":0,"pose_valid":False})
+
+#         img = cv2.imdecode(np.frombuffer(base64.b64decode(frame_b64.split(",")[-1]),np.uint8), cv2.IMREAD_COLOR)
+#         if img is None:
+#             return JSONResponse({"activity":None,"confidence":0,"pose_valid":False})
+
+#         rgb    = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+#         kp     = keypoints(LAND.detect(mp_img))
+#         b      = buf(username)
+
+#         if kp is None:
+#             b["frames"].clear(); b["preds"].clear()
+#             b["label"]="Show full body..."; b["conf"]=0.0
+#             return JSONResponse({"activity":None,"label":"Show full body...","confidence":0.0,"pose_valid":False})
+
+#         b["frames"].append(norm_frame(kp))
+
+#         if len(b["frames"])==SEQ_LEN:
+#             probs = MODEL.predict(zscore(np.array(b["frames"]))[np.newaxis,...],verbose=0)[0]
+#             idx   = int(np.argmax(probs))
+#             b["preds"].append((idx,float(probs[idx])))
+
+#             if len(b["preds"])>=3:
+#                 best,vc = Counter(p[0] for p in b["preds"]).most_common(1)[0]
+#                 ac      = float(np.mean([p[1] for p in b["preds"] if p[0]==best]))
+#                 rl      = CLASSES[best]
+#                 thr     = PER_CLASS.get(rl,CONF)
+#                 if ac>=thr and vc/len(b["preds"])>=VOTE:
+#                     b["label"] = DISPLAY_NAME.get(rl,rl)
+#                     b["conf"]  = ac
+#                     now = time.time()
+#                     if now-b["last_save"]>=3.0:
+#                         save_history(rl, ac, username=username, mobile=mobile)
+#                         if mobile: update_last_seen(mobile)
+#                         b["last_save"]=now
+#                 else:
+#                     b["label"]="..."; b["conf"]=ac
+
+#         total = len(get_history(mobile=mobile)) if mobile else 0
+#         return JSONResponse({"activity":b["label"],"confidence":b["conf"],
+#                              "pose_valid":True,"is_risk":b["label"] in RISK_ACTIVITIES,
+#                              "total_records":total})
+#     except Exception as e:
+#         return JSONResponse({"error":str(e),"activity":None,"confidence":0},status_code=500)
+
+
+# @app.get("/latest_activity")
+# async def latest(username: str="unknown"):
+#     b = buf(username)
+#     raw = get_history(username=username)
+#     return JSONResponse({"activity":b["label"],"confidence":b["conf"],"total_records":len(raw)})
+
+
+# @app.get("/health")
+# async def health():
+#     return {"status":"ok","classes":list(CLASSES)}
+
 """
 api.py — HAR AI Platform
-FastAPI backend: accepts frames from browser, runs pose + model, returns activity.
-Also handles user registration from Vercel landing page.
-Run: uvicorn api:app --host 0.0.0.0 --port 8000
+FastAPI: accepts browser frames → runs MediaPipe + model → returns activity.
+Also saves user registrations from Vercel form.
+
+Run locally : uvicorn api:app --host 0.0.0.0 --port 8000
+On Render   : started by start.sh alongside app.py
 """
-import os, io, cv2, base64, time, numpy as np
+import cv2, base64, time
+import numpy as np
 from collections import deque, Counter
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -228,134 +377,214 @@ from fastapi.responses import JSONResponse
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
-from model_utils import load_har_model, DISPLAY_NAME, RISK_ACTIVITIES
-from history_db import save_history, get_history, init_history_db, register_user, update_last_seen
 
+from model_utils import load_har_model, DISPLAY_NAME, RISK_ACTIVITIES
+from history_db  import (init_history_db, save_history, get_history,
+                          register_user, update_last_seen)
+
+# ── App setup ──
 app = FastAPI(title="HAR AI API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 init_history_db()
 
-# ── Load model once ──
-print("Loading HAR model for API...")
+# ── Load model ONCE at startup ──
+print("Loading HAR model...")
 MODEL   = load_har_model("models/activity_model.keras")
 CLASSES = np.load("classes.npy", allow_pickle=True)
-print(f"API ready — {len(CLASSES)} classes")
+print(f"Model loaded — {len(CLASSES)} classes: {list(CLASSES)}")
 
-# ── MediaPipe ──
+# ── MediaPipe setup ──
 _base = mp_python.BaseOptions(model_asset_path="pose_landmarker.task")
 _opts = vision.PoseLandmarkerOptions(base_options=_base)
 LAND  = vision.PoseLandmarker.create_from_options(_opts)
 
-SEQ_LEN=60; CONF=0.80; SMOOTH=20; VOTE=0.65
-PER_CLASS={"Drinking":0.90,"drinking":0.90,"exercise":0.85,"fighting":0.85,
-           "eating":0.83,"Eating":0.83,"no_activity":0.70,"no":0.70}
+# ── Config ──
+SEQ_LEN = 60
+CONF    = 0.80
+SMOOTH  = 20
+VOTE    = 0.65
+PER_CLASS = {
+    "Drinking": 0.90, "drinking": 0.90,
+    "exercise": 0.85, "fighting": 0.85,
+    "eating":   0.83, "Eating":   0.83,
+    "no_activity": 0.70, "no": 0.70,
+}
 
-# Per-user state
+# ── Per-user frame/prediction buffers (in memory) ──
 BUFFERS: dict = {}
 
-def buf(u):
-    if u not in BUFFERS:
-        BUFFERS[u]={"frames":deque(maxlen=SEQ_LEN),"preds":deque(maxlen=SMOOTH),
-                    "last_save":0.0,"label":"...","conf":0.0}
-    return BUFFERS[u]
+def get_buf(username: str) -> dict:
+    if username not in BUFFERS:
+        BUFFERS[username] = {
+            "frames":    deque(maxlen=SEQ_LEN),
+            "preds":     deque(maxlen=SMOOTH),
+            "last_save": 0.0,
+            "label":     "...",
+            "conf":      0.0,
+        }
+    return BUFFERS[username]
 
-def norm_frame(f):
-    out=f.copy()
-    hc=(f[23*4:23*4+3]+f[24*4:24*4+3])/2
-    sc=np.linalg.norm(f[11*4:11*4+3]-f[12*4:12*4+3])+1e-6
+
+def norm_frame(f: np.ndarray) -> np.ndarray:
+    out = f.copy()
+    hc  = (f[23*4:23*4+3] + f[24*4:24*4+3]) / 2.0
+    sc  = np.linalg.norm(f[11*4:11*4+3] - f[12*4:12*4+3]) + 1e-6
     for j in range(33):
-        i=j*4; out[i:i+3]=(f[i:i+3]-hc)/sc
+        i = j * 4
+        out[i:i+3] = (f[i:i+3] - hc) / sc
     return out
 
-def zscore(seq):
-    s=np.std(seq); return seq if s<1e-6 else (seq-np.mean(seq))/(s+1e-6)
 
-def keypoints(result):
-    if not result.pose_landmarks: return None
-    lms=result.pose_landmarks[0]
-    for i in [11,12,23,24]:
-        if lms[i].visibility<0.5: return None
-    return np.array([v for lm in lms for v in [lm.x,lm.y,lm.z,lm.visibility]],dtype=np.float32)
+def zscore(seq: np.ndarray) -> np.ndarray:
+    s = np.std(seq)
+    return seq if s < 1e-6 else (seq - np.mean(seq)) / (s + 1e-6)
+
+
+def extract_kp(result) -> np.ndarray | None:
+    if not result.pose_landmarks:
+        return None
+    lms = result.pose_landmarks[0]
+    for i in [11, 12, 23, 24]:
+        if lms[i].visibility < 0.5:
+            return None
+    return np.array(
+        [v for lm in lms for v in [lm.x, lm.y, lm.z, lm.visibility]],
+        dtype=np.float32
+    )
+
+
+# ══════════════════════════════════════
+# ENDPOINTS
+# ══════════════════════════════════════
+
+@app.get("/health")
+async def health():
+    """Check API is running."""
+    return {"status": "ok", "model": "loaded", "classes": list(CLASSES)}
 
 
 @app.post("/register")
 async def register(request: Request):
-    """Called by Vercel form — saves name+mobile to DB."""
+    """
+    Called when user fills the Vercel form (name + mobile).
+    Saves to registered_users table so admin can see who signed up.
+    """
     try:
-        d = await request.json()
-        name   = d.get("name","").strip()
-        mobile = d.get("mobile","").strip()
-        if name and mobile:
-            register_user(name, mobile)
-            return JSONResponse({"status":"ok","message":f"Registered {name}"})
-        return JSONResponse({"status":"error","message":"Missing name or mobile"},status_code=400)
+        d      = await request.json()
+        name   = d.get("name", "").strip()
+        mobile = d.get("mobile", "").strip()
+        if not name or not mobile:
+            return JSONResponse(
+                {"status": "error", "message": "Name and mobile required"},
+                status_code=400
+            )
+        register_user(name, mobile)
+        return JSONResponse({"status": "ok", "message": f"Registered {name}"})
     except Exception as e:
-        return JSONResponse({"status":"error","message":str(e)},status_code=500)
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 @app.post("/predict")
 async def predict(request: Request):
-    """Accepts base64 frame + username + mobile, returns activity."""
+    """
+    Main prediction endpoint.
+    Receives: { frame: base64_jpg, username: str, mobile: str }
+    Returns:  { activity, confidence, pose_valid, is_risk, total_records }
+    """
     try:
-        d        = await request.json()
-        username = d.get("username","unknown")
-        mobile   = d.get("mobile","")
-        frame_b64= d.get("frame","")
+        d         = await request.json()
+        username  = d.get("username", "unknown")
+        mobile    = d.get("mobile", "")
+        frame_b64 = d.get("frame", "")
+
         if not frame_b64:
-            return JSONResponse({"activity":None,"confidence":0,"pose_valid":False})
+            return JSONResponse({"activity": None, "confidence": 0, "pose_valid": False})
 
-        img = cv2.imdecode(np.frombuffer(base64.b64decode(frame_b64.split(",")[-1]),np.uint8), cv2.IMREAD_COLOR)
+        # Decode base64 image
+        img_bytes = base64.b64decode(frame_b64.split(",")[-1])
+        img       = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
-            return JSONResponse({"activity":None,"confidence":0,"pose_valid":False})
+            return JSONResponse({"activity": None, "confidence": 0, "pose_valid": False})
 
+        # MediaPipe pose extraction
         rgb    = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        kp     = keypoints(LAND.detect(mp_img))
-        b      = buf(username)
+        kp     = extract_kp(LAND.detect(mp_img))
+        b      = get_buf(username)
 
+        # Body not in frame
         if kp is None:
-            b["frames"].clear(); b["preds"].clear()
-            b["label"]="Show full body..."; b["conf"]=0.0
-            return JSONResponse({"activity":None,"label":"Show full body...","confidence":0.0,"pose_valid":False})
+            b["frames"].clear()
+            b["preds"].clear()
+            b["label"] = "Show full body..."
+            b["conf"]  = 0.0
+            return JSONResponse({
+                "activity":   None,
+                "label":      "Show full body...",
+                "confidence": 0.0,
+                "pose_valid": False,
+            })
 
+        # Add normalized frame to buffer
         b["frames"].append(norm_frame(kp))
 
-        if len(b["frames"])==SEQ_LEN:
-            probs = MODEL.predict(zscore(np.array(b["frames"]))[np.newaxis,...],verbose=0)[0]
+        # Predict when we have 60 frames
+        if len(b["frames"]) == SEQ_LEN:
+            seq   = zscore(np.array(b["frames"]))[np.newaxis, ...]
+            probs = MODEL.predict(seq, verbose=0)[0]
             idx   = int(np.argmax(probs))
-            b["preds"].append((idx,float(probs[idx])))
+            b["preds"].append((idx, float(probs[idx])))
 
-            if len(b["preds"])>=3:
-                best,vc = Counter(p[0] for p in b["preds"]).most_common(1)[0]
-                ac      = float(np.mean([p[1] for p in b["preds"] if p[0]==best]))
-                rl      = CLASSES[best]
-                thr     = PER_CLASS.get(rl,CONF)
-                if ac>=thr and vc/len(b["preds"])>=VOTE:
-                    b["label"] = DISPLAY_NAME.get(rl,rl)
+            if len(b["preds"]) >= 3:
+                best, vc = Counter(p[0] for p in b["preds"]).most_common(1)[0]
+                ac       = float(np.mean([p[1] for p in b["preds"] if p[0] == best]))
+                raw_lbl  = CLASSES[best]
+                thr      = PER_CLASS.get(raw_lbl, CONF)
+                v_ratio  = vc / len(b["preds"])
+
+                if ac >= thr and v_ratio >= VOTE:
+                    b["label"] = DISPLAY_NAME.get(raw_lbl, raw_lbl)
                     b["conf"]  = ac
+                    # Save to DB every 3 seconds
                     now = time.time()
-                    if now-b["last_save"]>=3.0:
-                        save_history(rl, ac, username=username, mobile=mobile)
-                        if mobile: update_last_seen(mobile)
-                        b["last_save"]=now
+                    if now - b["last_save"] >= 3.0:
+                        save_history(raw_lbl, ac, username=username, mobile=mobile)
+                        if mobile:
+                            update_last_seen(mobile)
+                        b["last_save"] = now
                 else:
-                    b["label"]="..."; b["conf"]=ac
+                    b["label"] = "..."
+                    b["conf"]  = ac
 
         total = len(get_history(mobile=mobile)) if mobile else 0
-        return JSONResponse({"activity":b["label"],"confidence":b["conf"],
-                             "pose_valid":True,"is_risk":b["label"] in RISK_ACTIVITIES,
-                             "total_records":total})
+
+        return JSONResponse({
+            "activity":      b["label"],
+            "confidence":    b["conf"],
+            "pose_valid":    True,
+            "is_risk":       b["label"] in RISK_ACTIVITIES,
+            "total_records": total,
+        })
+
     except Exception as e:
-        return JSONResponse({"error":str(e),"activity":None,"confidence":0},status_code=500)
+        return JSONResponse(
+            {"error": str(e), "activity": None, "confidence": 0},
+            status_code=500
+        )
 
 
 @app.get("/latest_activity")
-async def latest(username: str="unknown"):
-    b = buf(username)
+async def latest_activity(username: str = "unknown"):
+    """Poll latest prediction for a user — called by browser every 2s."""
+    b   = get_buf(username)
     raw = get_history(username=username)
-    return JSONResponse({"activity":b["label"],"confidence":b["conf"],"total_records":len(raw)})
-
-
-@app.get("/health")
-async def health():
-    return {"status":"ok","classes":list(CLASSES)}
+    return JSONResponse({
+        "activity":      b["label"],
+        "confidence":    b["conf"],
+        "total_records": len(raw),
+    })
