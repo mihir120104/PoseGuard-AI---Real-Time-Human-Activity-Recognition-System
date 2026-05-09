@@ -249,6 +249,28 @@ function startSession() {
   document.getElementById("stat-user").textContent      = userName.split(" ")[0];
 }
 
+const API = "https://poseguard-ai-real-time-human-activity.onrender.com";
+
+async function sendFrame() {
+  const video  = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  if (!video.videoWidth || !stream) return;
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const b64 = canvas.toDataURL("image/jpeg", 0.6);
+  try {
+    const res  = await fetch(API + "/predict", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({frame: b64, username: userName, mobile: userMobile})
+    });
+    if (!res.ok) return;
+    updateUI(await res.json());
+  } catch(e) {
+    document.getElementById("act-label").textContent = "Connecting...";
+  }
+}
 // ── Camera ──
 async function startCamera() {
   try {
@@ -270,7 +292,7 @@ async function startCamera() {
     notifyServer("start");
 
     // Poll for results every 3 seconds
-    window._pollInterval = setInterval(pollResults, 3000);
+    sendLoop = setInterval(sendFrame, 500);
 
   } catch (e) {
     alert("Camera access denied. Please allow camera permission and try again.\n\nError: " + e.message);
