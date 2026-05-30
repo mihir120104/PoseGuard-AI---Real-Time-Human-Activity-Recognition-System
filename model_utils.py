@@ -38,8 +38,24 @@ class SoftAttention(Layer):
         return super().get_config()
 
 
-def load_har_model(path: str = "models/activity_model.keras"):
-    """Load the HAR model with SoftAttention registered. Always use this instead of raw load_model."""
+def load_har_model(path="models/activity_model.keras"):
+    import os
+    if not os.path.exists(path):
+        print(f"Model not found locally — downloading from HuggingFace...")
+        try:
+            from huggingface_hub import hf_hub_download
+            os.makedirs("models", exist_ok=True)
+            hf_hub_download(
+                repo_id="mihir1201/poseguard-api",
+                filename="models/activity_model.keras",
+                repo_type="space",
+                local_dir=".",
+                local_dir_use_symlinks=False
+            )
+            print("Model downloaded successfully")
+        except Exception as e:
+            print(f"Download failed: {e}")
+            raise
     return _keras_load(path, custom_objects={"SoftAttention": SoftAttention})
 
 

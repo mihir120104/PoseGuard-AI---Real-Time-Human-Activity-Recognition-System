@@ -817,8 +817,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+
 import requests
 import subprocess, sys, os, sqlite3
+
 from datetime import datetime, timedelta
 from auth        import login, register, init_db, list_users, delete_user, change_password
 from history_db  import (get_history, get_history_with_users, get_user_summary,
@@ -832,6 +834,10 @@ init_history_db()
 st.set_page_config(page_title="HAR AI Platform", page_icon="🎯",
                    layout="wide", initial_sidebar_state="expanded")
 
+try:
+    from model_utils import load_har_model
+except ImportError:
+    pass
 
 st.markdown("""
 <style>
