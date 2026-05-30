@@ -296,6 +296,9 @@ function updateUI(data) {
 
 // ── Restore session ──
 window.addEventListener("load", () => {
+  // Wake up Render dashboard in background
+  fetch("https://poseguard-ai-real-time-human-activity.onrender.com/health")
+    .catch(()=>{});
   const n = sessionStorage.getItem("har_name");
   const m = sessionStorage.getItem("har_mobile");
   if (n) document.getElementById("inp-name").value   = n;
