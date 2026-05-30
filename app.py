@@ -817,6 +817,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import requests
 import subprocess, sys, os, sqlite3
 from datetime import datetime, timedelta
 from auth        import login, register, init_db, list_users, delete_user, change_password
@@ -830,6 +831,7 @@ init_history_db()
 
 st.set_page_config(page_title="HAR AI Platform", page_icon="🎯",
                    layout="wide", initial_sidebar_state="expanded")
+
 
 st.markdown("""
 <style>
@@ -1350,3 +1352,16 @@ elif page=="admin":
             import tensorflow as tf; env.append({"Key":"TensorFlow","Value":tf.__version__})
         except: pass
         st.dataframe(pd.DataFrame(env),use_container_width=True,hide_index=True)
+        
+HF_API = "https://mihir1201-poseguard-api.hf.space"
+
+def get_history_from_api(username=None):
+    """Read activity data from HF API instead of local DB"""
+    try:
+        url = f"{HF_API}/latest_activity"
+        if username:
+            url += f"?username={username}"
+        r = requests.get(url, timeout=5)
+        return r.json()
+    except:
+        return {}
