@@ -1,92 +1,26 @@
-# # history_db.py
-
-# import sqlite3
-# from datetime import datetime
-
-# DB_PATH = "history.db"
-
-# def init_history_db():
-#     """Create the history table if it doesn't exist."""
-#     conn = sqlite3.connect(DB_PATH)
-#     c = conn.cursor()
-#     c.execute("""
-#         CREATE TABLE IF NOT EXISTS history (
-#             id         INTEGER PRIMARY KEY AUTOINCREMENT,
-#             activity   TEXT    NOT NULL,
-#             confidence REAL    NOT NULL,
-#             timestamp  TEXT    NOT NULL
-#         )
-#     """)
-#     conn.commit()
-#     conn.close()
-
-
-# def save_history(activity: str, confidence: float):
-#     """Insert one activity record with current timestamp."""
-#     conn = sqlite3.connect(DB_PATH)
-#     c = conn.cursor()
-#     c.execute(
-#         "INSERT INTO history (activity, confidence, timestamp) VALUES (?, ?, ?)",
-#         (activity, round(float(confidence), 4), datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-#     )
-#     conn.commit()
-#     conn.close()
-
-
-# def get_history():
-#     """Return all rows as a list of tuples: (id, activity, confidence, timestamp)."""
-#     conn = sqlite3.connect(DB_PATH)
-#     c = conn.cursor()
-#     c.execute("SELECT id, activity, confidence, timestamp FROM history ORDER BY id DESC")
-#     rows = c.fetchall()
-#     conn.close()
-#     return rows
-
-
-# def delete_record(record_id: int):
-#     """Delete a single record by ID."""
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.execute("DELETE FROM history WHERE id=?", (record_id,))
-#     conn.commit()
-#     conn.close()
-
-
-# def update_record(record_id: int, activity: str, confidence: float):
-#     """Update activity and confidence for a given record."""
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.execute(
-#         "UPDATE history SET activity=?, confidence=? WHERE id=?",
-#         (activity, round(float(confidence), 4), record_id)
-#     )
-#     conn.commit()
-#     conn.close()
-
-
-# def clear_all():
-#     """Delete every row in the history table."""
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.execute("DELETE FROM history")
-#     conn.commit()
-#     conn.close()
-
-
-# # Auto-initialise on import
-# init_history_db()
-
 """
-history_db.py — Production
-Activity history + user registration (name + mobile).
+history_db.py — Production (IST timezone fix)
+Saves all timestamps in India Standard Time (UTC+5:30)
 """
-import sqlite3
-from datetime import datetime
+import sqlite3, os
+from datetime import datetime, timezone, timedelta
 
 DB_PATH = "history.db"
+HF_API  = "https://mihir1201-poseguard-api.hf.space"
+
+# India Standard Time = UTC + 5:30
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def now_ist():
+    """Return current time in IST as string."""
+    return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+
+IS_HF     = bool(os.environ.get("SPACE_ID"))
+IS_RENDER = not IS_HF
 
 
 def init_history_db():
     conn = sqlite3.connect(DB_PATH)
-
-    # Activity history table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,8 +31,6 @@ def init_history_db():
             timestamp  TEXT NOT NULL
         )
     """)
-
-    # Registered users table (filled from Vercel form)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS registered_users (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,28 +40,22 @@ def init_history_db():
             last_seen  TEXT NOT NULL
         )
     """)
-
-    # Safe migration for old schema
     for col, default in [("mobile", "''"), ("username", "'unknown'")]:
         try:
             conn.execute(f"ALTER TABLE history ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}")
-        except Exception:
+        except:
             pass
-
     conn.commit()
     conn.close()
 
 
 def register_user(name: str, mobile: str):
-    """Save user from Vercel form. Updates if mobile already exists."""
     conn = sqlite3.connect(DB_PATH)
-    now  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now  = now_ist()
     conn.execute("""
         INSERT INTO registered_users (name, mobile, registered, last_seen)
         VALUES (?, ?, ?, ?)
-        ON CONFLICT(mobile) DO UPDATE SET
-            name      = excluded.name,
-            last_seen = excluded.last_seen
+        ON CONFLICT(mobile) DO UPDATE SET name=excluded.name, last_seen=excluded.last_seen
     """, (name.strip(), mobile.strip(), now, now))
     conn.commit()
     conn.close()
@@ -139,7 +65,7 @@ def update_last_seen(mobile: str):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         "UPDATE registered_users SET last_seen=? WHERE mobile=?",
-        (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), mobile.strip())
+        (now_ist(), mobile.strip())
     )
     conn.commit()
     conn.close()
@@ -149,39 +75,58 @@ def save_history(activity: str, confidence: float,
                  username: str = "unknown", mobile: str = ""):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
-        "INSERT INTO history (username, mobile, activity, confidence, timestamp) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (username, mobile, activity,
-         round(float(confidence), 4),
-         datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        "INSERT INTO history (username, mobile, activity, confidence, timestamp) VALUES (?,?,?,?,?)",
+        (username, mobile, activity, round(float(confidence), 4), now_ist())
     )
     conn.commit()
     conn.close()
 
 
+def _fetch_hf(endpoint: str, params: dict = None):
+    try:
+        import requests
+        r = requests.get(f"{HF_API}{endpoint}", params=params, timeout=8)
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        print(f"HF fetch error: {e}")
+    return None
+
+
 def get_history(username: str = None, mobile: str = None):
+    if IS_RENDER:
+        params = {}
+        if username and username != "admin": params["username"] = username
+        if mobile: params["mobile"] = mobile
+        data = _fetch_hf("/db/history", params)
+        if data and "rows" in data:
+            return [tuple(r) for r in data["rows"]]
+        return []
     conn = sqlite3.connect(DB_PATH)
     if username == "admin" or (not username and not mobile):
         rows = conn.execute(
-            "SELECT id, activity, confidence, timestamp "
-            "FROM history ORDER BY id DESC"
+            "SELECT id, activity, confidence, timestamp FROM history ORDER BY id DESC"
         ).fetchall()
     elif mobile:
         rows = conn.execute(
-            "SELECT id, activity, confidence, timestamp "
-            "FROM history WHERE mobile=? ORDER BY id DESC", (mobile,)
+            "SELECT id, activity, confidence, timestamp FROM history "
+            "WHERE mobile=? ORDER BY id DESC", (mobile,)
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, activity, confidence, timestamp "
-            "FROM history WHERE username=? ORDER BY id DESC", (username,)
+            "SELECT id, activity, confidence, timestamp FROM history "
+            "WHERE username=? ORDER BY id DESC", (username,)
         ).fetchall()
     conn.close()
     return rows
 
 
 def get_history_with_users():
-    """Admin — all records with username + mobile."""
+    if IS_RENDER:
+        data = _fetch_hf("/db/history_with_users")
+        if data and "rows" in data:
+            return [tuple(r) for r in data["rows"]]
+        return []
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT id, username, mobile, activity, confidence, timestamp "
@@ -192,7 +137,11 @@ def get_history_with_users():
 
 
 def get_registered_users():
-    """Admin — all users who filled the Vercel form."""
+    if IS_RENDER:
+        data = _fetch_hf("/db/registered_users")
+        if data and "rows" in data:
+            return [tuple(r) for r in data["rows"]]
+        return []
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT id, name, mobile, registered, last_seen "
@@ -203,7 +152,11 @@ def get_registered_users():
 
 
 def get_user_summary():
-    """Admin — activity count per user grouped by mobile."""
+    if IS_RENDER:
+        data = _fetch_hf("/db/user_summary")
+        if data and "rows" in data:
+            return [tuple(r) for r in data["rows"]]
+        return []
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         "SELECT username, mobile, COUNT(*) as total, MAX(timestamp) as last_seen "
@@ -216,8 +169,7 @@ def get_user_summary():
 def delete_record(record_id: int):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM history WHERE id=?", (record_id,))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 def update_record(record_id: int, activity: str, confidence: float):
@@ -226,22 +178,19 @@ def update_record(record_id: int, activity: str, confidence: float):
         "UPDATE history SET activity=?, confidence=? WHERE id=?",
         (activity, round(float(confidence), 4), record_id)
     )
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 def clear_all():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM history")
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 def clear_user(username: str):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM history WHERE username=?", (username,))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 init_history_db()
