@@ -14,9 +14,20 @@ body{background:#070A0F;color:#DDE6F0;font-family:'Inter',sans-serif;min-height:
 .logo{width:72px;height:72px;border-radius:18px;background:linear-gradient(135deg,#0F3D30,#0A2840);border:1px solid #1A5040;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 24px;}
 h1{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;background:linear-gradient(135deg,#E8EDF5,#14B8A6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px;}
 .subtitle{font-size:1rem;color:#14B8A6;margin-bottom:8px;}
-.desc{font-size:0.9rem;color:#4A5C74;max-width:500px;line-height:1.7;margin-bottom:32px;}
-.badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:36px;}
+.desc{font-size:0.9rem;color:#4A5C74;max-width:520px;line-height:1.7;margin-bottom:24px;}
+.badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:24px;}
 .badge{background:#0D1520;border:1px solid #1A2535;color:#14B8A6;padding:5px 14px;border-radius:20px;font-size:0.8rem;}
+
+/* 7 ACTIVITIES SECTION */
+.activities-section{width:100%;max-width:760px;margin-bottom:28px;}
+.act-title{font-family:monospace;font-size:10px;color:#2D3E55;letter-spacing:.2em;text-transform:uppercase;margin-bottom:14px;}
+.act-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
+.act-card{background:#0D1520;border:1px solid #1A2535;border-radius:10px;padding:12px 6px;text-align:center;transition:border-color .2s;}
+.act-card:hover{border-color:#14B8A6;}
+.act-icon{font-size:22px;margin-bottom:6px;}
+.act-name{font-size:10px;color:#8A9BB5;font-weight:500;}
+.act-desc{font-size:9px;color:#2D3E55;margin-top:3px;line-height:1.4;}
+
 .form-card{background:#0D1520;border:1px solid #1A2535;border-radius:16px;padding:32px 28px;width:100%;max-width:400px;text-align:left;}
 .form-label{font-size:12px;color:#4A5C74;margin-bottom:6px;display:block;text-transform:uppercase;letter-spacing:.1em;}
 .form-input{width:100%;background:#070A0F;border:1px solid #1A2535;color:#DDE6F0;padding:12px 14px;border-radius:8px;font-size:14px;outline:none;margin-bottom:16px;font-family:'Inter',sans-serif;transition:border .2s;}
@@ -45,7 +56,7 @@ h1{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;background:lin
 .controls{width:100%;max-width:860px;display:flex;gap:12px;margin-top:14px;}
 .btn-start{flex:1;background:#0F3D30;border:2px solid #14B8A6;color:#14B8A6;padding:14px;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;}
 .btn-start:hover{background:#145C46;}
-.btn-stop{flex:1;background:#1A0A0A;border:2px solid #EF4444;color:#EF4444;padding:14px;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;display:none;}
+.btn-stop{flex:1;background:#1A0A0A;border:2px solid #EF4444;color:#EF4444;padding:14px;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;display:none;font-family:'Inter',sans-serif;}
 .btn-stop:hover{background:#2A0A0A;}
 .btn-dashboard{flex:1;background:#0A1520;border:1px solid #1A2535;color:#8A9BB5;padding:14px;border-radius:10px;font-size:1rem;font-weight:500;cursor:pointer;text-decoration:none;display:flex;align-items:center;justify-content:center;font-family:'Inter',sans-serif;}
 .status-bar{width:100%;max-width:860px;background:#0D1520;border:1px solid #1A2535;border-radius:10px;padding:12px 16px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;}
@@ -55,6 +66,12 @@ h1{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;background:lin
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
 .live-dot{width:8px;height:8px;border-radius:50%;background:#22C55E;display:inline-block;animation:pulse 1.5s infinite;margin-right:6px;}
 .not-live-dot{width:8px;height:8px;border-radius:50%;background:#2D3E55;display:inline-block;margin-right:6px;}
+
+/* Responsive */
+@media(max-width:600px){
+  .act-grid{grid-template-columns:repeat(4,1fr);}
+  h1{font-size:1.8rem;}
+}
 </style>
 </head>
 <body>
@@ -64,13 +81,58 @@ h1{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;background:lin
   <div class="logo">🎯</div>
   <h1>PoseGuard AI</h1>
   <div class="subtitle">Human Activity Recognition System</div>
-  <p class="desc">Real-time AI that detects your activities through your camera. Powered by a custom CNN + BiLSTM + Attention neural network with 99.61% accuracy.</p>
+  <p class="desc">Real-time AI that detects your activities through your camera using a custom CNN + BiLSTM + Attention neural network with <strong style="color:#14B8A6">99.61% accuracy</strong>.</p>
+
   <div class="badges">
     <span class="badge">99.61% F1</span>
     <span class="badge">7 Activities</span>
     <span class="badge">Real-Time AI</span>
     <span class="badge">Privacy Safe</span>
+    <span class="badge">CPU Only</span>
   </div>
+
+  <!-- 7 ACTIVITIES DISPLAY -->
+  <div class="activities-section">
+    <div class="act-title">Activities we detect in real-time</div>
+    <div class="act-grid">
+      <div class="act-card">
+        <div class="act-icon">🍹</div>
+        <div class="act-name">Drinking</div>
+        <div class="act-desc">Hand raised to lips</div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">🍽️</div>
+        <div class="act-name">Eating</div>
+        <div class="act-desc">Hand near mouth, elbow out</div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">🏃</div>
+        <div class="act-name">Exercise</div>
+        <div class="act-desc">Repetitive body movement</div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">⚔️</div>
+        <div class="act-name">Fighting</div>
+        <div class="act-desc">Rapid arm aggression</div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">💻</div>
+        <div class="act-name">Typing</div>
+        <div class="act-desc">Fingers on keyboard</div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">✍️</div>
+        <div class="act-name">Writing</div>
+        <div class="act-desc">Arm on board surface</div>
+      </div>
+      <div class="act-card">
+        <div class="act-icon">🧍</div>
+        <div class="act-name">No Activity</div>
+        <div class="act-desc">Standing or sitting still</div>
+      </div>
+    </div>
+  </div>
+
   <div class="form-card">
     <div style="font-family:monospace;font-size:10px;color:#2D3E55;letter-spacing:.15em;margin-bottom:20px;">ENTER YOUR DETAILS TO START</div>
     <label class="form-label">Your Name</label>
@@ -81,7 +143,8 @@ h1{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;background:lin
     <button class="btn-primary" onclick="startSession()">Continue → Open Camera</button>
     <p class="privacy">🔒 Only activity labels are saved — not your video.</p>
   </div>
-  <div style="margin-top:32px;font-size:13px;color:#2D3E55;">
+
+  <div style="margin-top:24px;font-size:13px;color:#2D3E55;">
     Admin? <a href="https://poseguard-ai-real-time-human-activity.onrender.com" target="_blank" style="color:#14B8A6;text-decoration:none;">Open Dashboard →</a>
   </div>
 </div>
@@ -132,41 +195,29 @@ h1{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;background:lin
     </div>
     <div style="background:#0D0A04;border:1px solid #4A3800;border-left:3px solid #F59E0B;border-radius:8px;padding:12px 14px;">
       <div style="color:#F59E0B;font-size:11px;font-weight:600;margin-bottom:4px;">⏳ First Prediction</div>
-      <div style="color:#4A5C74;font-size:11px;line-height:1.6;">Takes <b style="color:#DDE6F0">~30 seconds</b> — model needs 60 frames. Watch the frame counter.</div>
+      <div style="color:#4A5C74;font-size:11px;line-height:1.6;">Takes <b style="color:#DDE6F0">~10 seconds</b> — model needs 20 frames. Watch frame counter.</div>
     </div>
   </div>
 </div>
 
 <script>
-// ══ CONFIG — HuggingFace API ══
 const API  = "https://mihir1201-poseguard-api.hf.space";
 const DASH = "https://poseguard-ai-real-time-human-activity.onrender.com";
 
-let userName    = "";
-let userMobile  = "";
-let videoStream = null;
-let sendLoop    = null;
-let framesSent  = 0;
+let userName="", userMobile="", videoStream=null, sendLoop=null, framesSent=0;
 
-// ── Session start ──
 function startSession() {
   const name   = document.getElementById("inp-name").value.trim();
   const mobile = document.getElementById("inp-mobile").value.trim();
   const err    = document.getElementById("form-error");
-
-  if (!name || name.length < 2) {
-    err.textContent = "Please enter your full name."; err.style.display = "block"; return;
-  }
-  if (!/^\d{10}$/.test(mobile)) {
-    err.textContent = "Enter a valid 10-digit mobile number."; err.style.display = "block"; return;
-  }
-  err.style.display = "none";
-  userName = name; userMobile = mobile;
+  if (!name || name.length < 2) { err.textContent="Please enter your full name."; err.style.display="block"; return; }
+  if (!/^\d{10}$/.test(mobile))  { err.textContent="Enter a valid 10-digit mobile number."; err.style.display="block"; return; }
+  err.style.display="none";
+  userName=name; userMobile=mobile;
   sessionStorage.setItem("har_name", name);
   sessionStorage.setItem("har_mobile", mobile);
 
-  // Register user on server
-  fetch(API + "/register", {
+  fetch(API+"/register", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({name, mobile})
   }).catch(()=>{});
@@ -174,37 +225,31 @@ function startSession() {
   document.getElementById("landing").style.display      = "none";
   document.getElementById("camera-page").style.display  = "flex";
   document.getElementById("display-name").textContent   = name;
-  document.getElementById("display-mobile").textContent = "📱 " + mobile;
+  document.getElementById("display-mobile").textContent = "📱 "+mobile;
 }
 
-// ── Camera start ──
 async function startCamera() {
   try {
     videoStream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:"user", width:{ideal:640}, height:{ideal:480}},
-      audio:false
+      video:{facingMode:"user", width:{ideal:640}, height:{ideal:480}}, audio:false
     });
     const video = document.getElementById("video");
     video.srcObject = videoStream;
-
     document.getElementById("btn-start").style.display = "none";
     document.getElementById("btn-stop").style.display  = "flex";
     document.getElementById("live-indicator").innerHTML =
       '<span class="live-dot"></span><span style="font-size:12px;color:#22C55E;">Live</span>';
     document.getElementById("overlay-label").textContent = "Warming up — collecting frames...";
     document.getElementById("overlay-label").style.color = "#F59E0B";
-
-    framesSent = 0;
-    sendLoop = setInterval(sendFrame, 500); // send every 500ms = 2fps
-
+    framesSent=0;
+    sendLoop = setInterval(sendFrame, 500);
   } catch(e) {
-    alert("Camera access denied. Please allow camera permission.\n\n" + e.message);
+    alert("Camera access denied.\n"+e.message);
   }
 }
 
-// ── Camera stop ──
 function stopCamera() {
-  if (videoStream) { videoStream.getTracks().forEach(t=>t.stop()); videoStream = null; }
+  if(videoStream){videoStream.getTracks().forEach(t=>t.stop()); videoStream=null;}
   clearInterval(sendLoop);
   document.getElementById("btn-start").style.display = "flex";
   document.getElementById("btn-stop").style.display  = "none";
@@ -216,28 +261,22 @@ function stopCamera() {
   document.getElementById("frames-count").textContent = "";
 }
 
-// ── Send frame to HuggingFace API ──
 async function sendFrame() {
   const video  = document.getElementById("video");
   const canvas = document.getElementById("canvas");
-  if (!video.videoWidth || !videoStream) return;
-
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
+  if(!video.videoWidth || !videoStream) return;
+  canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+  canvas.getContext("2d").drawImage(video,0,0);
   const b64 = canvas.toDataURL("image/jpeg", 0.6);
-
   framesSent++;
   document.getElementById("stat-frames").textContent = framesSent;
-  document.getElementById("frames-count").textContent = "Frames: " + framesSent + " / 60 needed";
-
+  document.getElementById("frames-count").textContent = "Frames: "+framesSent+" / 20 needed";
   try {
-    const res = await fetch(API + "/predict", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
+    const res = await fetch(API+"/predict", {
+      method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({frame:b64, username:userName, mobile:userMobile})
     });
-    if (!res.ok) return;
+    if(!res.ok) return;
     updateUI(await res.json());
   } catch(e) {
     document.getElementById("overlay-label").textContent = "Connecting to server...";
@@ -245,7 +284,6 @@ async function sendFrame() {
   }
 }
 
-// ── Update UI with prediction result ──
 function updateUI(data) {
   const lbl  = document.getElementById("overlay-label");
   const conf = document.getElementById("overlay-conf");
@@ -253,8 +291,7 @@ function updateUI(data) {
   const warn = document.getElementById("warning-text");
   const fc   = document.getElementById("frames-count");
 
-  // Body not in frame
-  if (!data.pose_valid || data.label === "Show full body...") {
+  if(!data.pose_valid || data.label==="Show full body...") {
     warn.style.display = "block";
     lbl.textContent    = "⚠ Move back — show full body (head to hip)";
     lbl.style.color    = "#60A5FA";
@@ -268,41 +305,37 @@ function updateUI(data) {
 
   const activity   = data.activity || "...";
   const confidence = data.confidence || 0;
-  const pct        = (confidence * 100).toFixed(1);
+  const pct        = (confidence*100).toFixed(1);
   const isRisk     = ["fighting","Fighting","falling"].includes(activity);
 
-  if (activity === "...") {
+  if(activity==="...") {
     lbl.textContent  = "Analyzing... hold pose steady";
     lbl.style.color  = "#F59E0B";
-    conf.textContent = "Frames: " + framesSent + " / 60 needed for first prediction";
-    bar.style.width  = Math.min((framesSent / 60) * 100, 95) + "%";
+    conf.textContent = "Frames: "+framesSent+" / 20 needed";
+    bar.style.width  = Math.min((framesSent/20)*100, 95)+"%";
     bar.style.background = "#F59E0B";
     fc.textContent   = "";
   } else {
-    lbl.textContent  = "Activity: " + activity;
+    lbl.textContent  = "Activity: "+activity;
     lbl.style.color  = isRisk ? "#EF4444" : "#22C55E";
-    conf.textContent = "Confidence: " + pct + "%";
-    bar.style.width  = pct + "%";
+    conf.textContent = "Confidence: "+pct+"%";
+    bar.style.width  = pct+"%";
     bar.style.background = isRisk ? "#EF4444" : "#22C55E";
     fc.textContent   = "";
     document.getElementById("stat-activity").textContent = activity;
-    document.getElementById("stat-conf").textContent     = pct + "%";
+    document.getElementById("stat-conf").textContent     = pct+"%";
   }
-
-  if (data.total_records !== undefined) {
+  if(data.total_records!==undefined)
     document.getElementById("stat-saved").textContent = data.total_records;
-  }
 }
 
-// ── Restore session ──
-window.addEventListener("load", () => {
-  // Wake up Render dashboard in background
-  fetch("https://poseguard-ai-real-time-human-activity.onrender.com/health")
-    .catch(()=>{});
-  const n = sessionStorage.getItem("har_name");
-  const m = sessionStorage.getItem("har_mobile");
-  if (n) document.getElementById("inp-name").value   = n;
-  if (m) document.getElementById("inp-mobile").value = m;
+window.addEventListener("load", ()=>{
+  const n=sessionStorage.getItem("har_name");
+  const m=sessionStorage.getItem("har_mobile");
+  if(n) document.getElementById("inp-name").value   = n;
+  if(m) document.getElementById("inp-mobile").value = m;
+  // Wake up Render in background
+  fetch(DASH+"/health").catch(()=>{});
 });
 </script>
 </body>
